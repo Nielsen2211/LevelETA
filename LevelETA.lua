@@ -1063,8 +1063,7 @@ infoLine:SetColorTexture(1, 1, 1, 0.06)
 local infoText = fs(S, F_SEMI, 11); infoText:SetPoint("TOPLEFT", 18, -440); infoText:SetTextColor(0.55, 0.58, 0.64)
 label(infoText, "standalone")
 local fxbDot = S:CreateTexture(nil, "ARTWORK")
-fxbDot:SetSize(7, 7); fxbDot:SetPoint("TOPLEFT", 19, -460); fxbDot:SetTexture("Interface\\Buttons\\WHITE8x8")
-if fxbDot.SetMask then fxbDot:SetMask("Interface\\CharacterFrame\\TempPortraitAlphaMask") end
+fxbDot:SetSize(7, 7); fxbDot:SetPoint("TOPLEFT", 19, -460); fxbDot:SetTexture(TEX .. "Dot")
 local fxbText = fs(S, F_SEMI, 11); fxbText:SetPoint("TOPLEFT", 32, -458)
 
 -- knapper i bunden
