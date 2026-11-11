@@ -38,6 +38,11 @@ local LOC = {
     showTimes = "Show level times", timesHead = "Level times", now = "now", noTimes = "No level times yet",
     avg = "Average per level", hm = "%dh %02dm", timesCount = "Levels in the list",
     foodTip = "Food buff, +5% XP from kills", bagTip = "Sleeping bag, +%d%% XP",
+    barHead = "XP bar", showBar = "Show XP bar", hideBlizz = "Hide Blizzard's XP bar", barSize = "Bar size",
+    xph = "XP per hour", nextLevel = "Next level", questsReady = "Quests ready", rested = "Rested",
+    xpLeft = "XP left", killsTo = "Kills to level", questsTo = "Quests to level", session = "This session",
+    sessTime = "Time", sessXP = "XP", sessKills = "Kills", sessQuests = "Quests", sessLevels = "Levels",
+    buffsHead = "XP buffs",
   },
   da = {
     level = "Level", today = "I dag kl. %s", tomorrow = "I morgen kl. %s",
@@ -56,6 +61,11 @@ local LOC = {
     showTimes = "Vis level-tider", timesHead = "Level-tider", now = "nu", noTimes = "Ingen level-tider endnu",
     avg = "Snit pr. level", hm = "%dt %02dm", timesCount = "Levels på listen",
     foodTip = "Food buff, +5% XP fra kills", bagTip = "Sovepose, +%d%% XP",
+    barHead = "XP-bar", showBar = "Vis XP-bar", hideBlizz = "Skjul Blizzards XP-bar", barSize = "Barens størrelse",
+    xph = "XP pr. time", nextLevel = "Næste level", questsReady = "Quests klar", rested = "Rested",
+    xpLeft = "XP tilbage", killsTo = "Kills til level", questsTo = "Quests til level", session = "Denne session",
+    sessTime = "Tid", sessXP = "XP", sessKills = "Kills", sessQuests = "Quests", sessLevels = "Levels",
+    buffsHead = "XP-buffs",
   },
 }
 local function T(k) return (LOC[(DB and DB.lang) or "en"] or LOC.en)[k] end
@@ -68,6 +78,7 @@ local defaults = {
   schedule = true, sleepStart = 23 * 60, sleepEnd = 7 * 60, breakStart = 12 * 60, breakLen = 0,
   questBuffer = 25, inn = true, scale = 1, lang = "en", locked = false, hidden = false, mmAngle = 200,
   showTimes = false, timesCount = 10,
+  showBar = false, hideBlizz = false, barScale = 1, questRewards = {},
 }
 
 -- ---------- tid og datoer ----------
@@ -183,18 +194,18 @@ end
 
 local function scanBuffs()
   if InCombatLockdown and InCombatLockdown() then return end  -- buffs kan kun laeses uden for kamp
-  local fed, bag, stacks
+  local fed, bag, stacks, fedIcon, bagIcon
   local ok = pcall(function()
     for i = 1, 80 do
-      local name, id, exp, count
+      local name, id, exp, count, icon
       if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
         local a = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
         if not a then break end
-        name, id, exp, count = a.name, a.spellId, a.expirationTime, a.applications
+        name, id, exp, count, icon = a.name, a.spellId, a.expirationTime, a.applications, a.icon
       elseif UnitBuff then
-        local n, _, c, _, _, e, _, _, _, sid = UnitBuff("player", i)
+        local n, ic, c, _, _, e, _, _, _, sid = UnitBuff("player", i)
         if not n then break end
-        name, id, exp, count = n, sid, e, c
+        name, id, exp, count, icon = n, sid, e, c, ic
       else
         break
       end
@@ -202,15 +213,16 @@ local function scanBuffs()
       if exp and exp > 0 then
         local n = type(name) == "string" and name:lower() or ""
         if n:find("well fed", 1, true) then
-          fed = math.max(fed or 0, exp)
+          if not fed or exp > fed then fed, fedIcon = exp, icon end
         elseif num(id) == BAG_ID or n:find("well-rested", 1, true) or n:find("well rested", 1, true) then
-          bag, stacks = exp, num(count)
+          bag, stacks, bagIcon = exp, num(count), icon
         end
       end
     end
   end)
   if not ok then return end
   buffs.fedUntil, buffs.bagUntil = fed, bag
+  buffs.fedIcon, buffs.bagIcon = fedIcon, bagIcon
   buffs.bagStacks = bag and math.max(1, math.min(3, (stacks and stacks > 0) and stacks or 1)) or nil
   buffsDirty = false
 end
@@ -648,6 +660,231 @@ local function drawTimes(y)
   return y
 end
 
+-- ---------- aktive XP-buffs som smaa "chips": ikon, procent, tid tilbage ----------
+local FOOD_ICON = "Interface\\Icons\\Spell_Misc_Food"
+local BAG_ICON = "Interface\\Icons\\Spell_Nature_Sleep"
+
+local function activeBuffs()
+  local list = {}
+  if fedLeft() > 0 then list[#list + 1] = {icon = buffs.fedIcon or FOOD_ICON, pct = "+5%", left = fedLeft()} end
+  if bagLeft() > 0 then list[#list + 1] = {icon = buffs.bagIcon or BAG_ICON, pct = "+" .. (buffs.bagStacks or 1) .. "%", left = bagLeft()} end
+  return list
+end
+
+local function placeChips(parent, store, list, x, y)
+  for i, b in ipairs(list) do
+    local c = store[i]
+    if not c then
+      c = CreateFrame("Frame", nil, parent); c:SetHeight(16)
+      c.icon = c:CreateTexture(nil, "ARTWORK"); c.icon:SetSize(14, 14); c.icon:SetPoint("LEFT")
+      c.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+      c.pct = fs(c, F_BOLD, 11); c.pct:SetPoint("LEFT", c.icon, "RIGHT", 5, 0); c.pct:SetTextColor(0.62, 0.82, 1)
+      c.time = fs(c, F_SEMI, 11); c.time:SetPoint("LEFT", c.pct, "RIGHT", 4, 0); c.time:SetTextColor(0.55, 0.58, 0.64)
+      store[i] = c
+    end
+    c.icon:SetTexture(b.icon); c.pct:SetText(b.pct); c.time:SetText(dur(b.left))
+    local w = 14 + 5 + (c.pct:GetStringWidth() or 0) + 4 + (c.time:GetStringWidth() or 0)
+    c:SetWidth(w); c:ClearAllPoints(); c:SetPoint("LEFT", parent, "TOPLEFT", x, y); c:Show()
+    x = x + w + 14
+  end
+  for i = #list + 1, #store do store[i]:Hide() end
+end
+local winChips = {}
+
+-- ---------- XP-bar ----------
+local BW = 460
+local bar = CreateFrame("Frame", "LevelETABar", UIParent)
+bar:SetSize(BW, 96); bar:Hide()
+skin(bar, "Bar", 920, 1024)
+movable(bar, function() return not DB.locked end)
+bar:SetScript("OnDragStop", function(self)
+  self:StopMovingOrSizing()
+  local p, _, rp, x, y = self:GetPoint()
+  DB.barPoint = {p, rp, x, y}
+end)
+
+local bLogo = bar:CreateTexture(nil, "ARTWORK"); bLogo:SetSize(18, 18); bLogo:SetPoint("LEFT", bar, "TOPLEFT", 14, -18); bLogo:SetTexture(LOGO)
+local bLevel = fs(bar, F_BOLD, 14); bLevel:SetPoint("LEFT", bLogo, "RIGHT", 6, 0)
+local bPct = fs(bar, F_BOLD, 14); bPct:SetPoint("RIGHT", bar, "TOPRIGHT", -14, -18); bPct:SetTextColor(0.62, 0.82, 1)
+local bXP = fs(bar, F_SEMI, 11); bXP:SetPoint("RIGHT", bPct, "LEFT", -10, 0); bXP:SetTextColor(0.36, 0.38, 0.44)
+local barChips = {}
+
+-- bjaelken: baggrund, nuvaerende XP (blaa), quests klar (guld), rested (lyseblaa), afrundet med en maske
+local track = CreateFrame("Frame", nil, bar)
+track:SetPoint("TOPLEFT", 14, -32); track:SetPoint("TOPRIGHT", -14, -32); track:SetHeight(10)
+local TRW = BW - 28
+local mask
+if track.CreateMaskTexture then
+  mask = track:CreateMaskTexture()
+  if mask then
+    mask:SetTexture(TEX .. "BarMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    mask:SetAllPoints(track)
+  end
+end
+local function barTex(layer, sub, r, g, b, a)
+  local t = track:CreateTexture(nil, layer, nil, sub)
+  t:SetColorTexture(r, g, b, a)
+  t:SetPoint("TOP"); t:SetPoint("BOTTOM")
+  if mask and t.AddMaskTexture then t:AddMaskTexture(mask) end
+  return t
+end
+local segBg = barTex("BACKGROUND", 0, 1, 1, 1, 0.06); segBg:SetPoint("LEFT"); segBg:SetPoint("RIGHT")
+local segCur = barTex("ARTWORK", 3, 0.62, 0.82, 1, 0.92)
+local segQuest = barTex("ARTWORK", 2, 1, 0.82, 0.29, 0.8)
+local segRest = barTex("ARTWORK", 1, 0.62, 0.82, 1, 0.43)
+for i = 1, 9 do
+  local t = track:CreateTexture(nil, "OVERLAY")
+  t:SetColorTexture(0, 0, 0, 0.18); t:SetSize(1, 6)
+  t:SetPoint("CENTER", track, "LEFT", TRW * i / 10, 0)
+end
+local function setSeg(t, from, to)
+  from, to = math.max(0, math.min(1, from)), math.max(0, math.min(1, to))
+  if to - from < 0.002 then t:Hide(); return end
+  t:ClearAllPoints(); t:SetPoint("TOP"); t:SetPoint("BOTTOM")
+  t:SetPoint("LEFT", track, "LEFT", TRW * from, 0); t:SetWidth(TRW * (to - from)); t:Show()
+end
+
+-- fire tal under bjaelken
+local cols = {}
+local CW = (BW - 28) / 4
+for i = 1, 4 do
+  local x = 14 + CW * (i - 1)
+  local c = {}
+  c.dot = bar:CreateTexture(nil, "ARTWORK"); c.dot:SetSize(7, 7); c.dot:SetTexture(TEX .. "Dot")
+  c.dot:SetPoint("LEFT", bar, "TOPLEFT", x, -59)
+  c.label = fs(bar, F_SEMI, 10.5); c.label:SetTextColor(0.55, 0.58, 0.64)
+  c.value = fs(bar, F_BOLD, 15); c.value:SetPoint("LEFT", bar, "TOPLEFT", x, -77)
+  c.x = x
+  if i > 1 then
+    local sep = bar:CreateTexture(nil, "ARTWORK"); sep:SetColorTexture(1, 1, 1, 0.06)
+    sep:SetSize(1, 32); sep:SetPoint("TOPLEFT", x - 10, -52)
+  end
+  cols[i] = c
+end
+local function setCol(i, labelKey, value, r, g, b, dot)
+  local c = cols[i]
+  c.label:SetText(T(labelKey)); c.value:SetText(value); c.value:SetTextColor(r, g, b)
+  c.label:ClearAllPoints()
+  if dot then
+    c.dot:SetVertexColor(dot[1], dot[2], dot[3]); c.dot:Show()
+    c.label:SetPoint("LEFT", bar, "TOPLEFT", c.x + 11, -59)
+  else
+    c.dot:Hide(); c.label:SetPoint("LEFT", bar, "TOPLEFT", c.x, -59)
+  end
+end
+
+local function kfmt(n)
+  n = math.floor(n + 0.5)
+  if n >= 1000 then return string.format("%.1fk", n / 1000) end
+  return tostring(n)
+end
+local function commas(n)
+  local s = tostring(math.floor(n + 0.5))
+  local out = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+  return (out:gsub("^,", ""))
+end
+
+-- XP du rent faktisk har faaet pr. time de sidste 30 min (med rested og buffs), som ForeverXP Bar viser
+local function liveXPh()
+  local winStart = DB.play - 1800
+  local sum, first = 0, nil
+  for i = #DB.samples, 1, -1 do
+    local x = DB.samples[i]
+    if x.p < winStart then break end
+    sum = sum + x.xp; first = x.p
+  end
+  local span = math.min(1800, DB.play - (DB.sessionStart or 0))
+  if span >= 120 and sum > 0 then return sum / span * 3600 end
+  return nil
+end
+
+local function restedPct(mx)
+  local p = mx > 0 and restedXP() / mx * 100 or 0
+  if p >= 10 then return string.format("%d%%", math.floor(p + 0.5)) end
+  return string.format("%.1f%%", p)
+end
+
+local function updateBar(r, head)
+  if not DB.showBar or UnitLevel("player") >= MAXLVL then bar:Hide(); return end
+  bar:SetScale(DB.barScale); bar:Show()
+  local lvl, xp, mx = UnitLevel("player"), UnitXP("player"), UnitXPMax("player")
+  if not mx or mx <= 0 then return end
+  bLevel:SetText(T("level") .. " " .. lvl)
+  bPct:SetText(math.floor(xp / mx * 100) .. "%")
+  bXP:SetText(kfmt(xp) .. " / " .. kfmt(mx) .. " XP")
+  local q = math.min(questXP(), mx - xp)
+  local rs = math.min(restedXP(), math.max(0, mx - xp - q))
+  setSeg(segCur, 0, xp / mx); setSeg(segQuest, xp / mx, (xp + q) / mx); setSeg(segRest, (xp + q) / mx, (xp + q + rs) / mx)
+  placeChips(bar, barChips, activeBuffs(), 14 + 18 + 6 + (bLevel:GetStringWidth() or 60) + 14, -18)
+
+  local xph = liveXPh() or (r * 3600)
+  setCol(1, "xph", kfmt(xph), 0.91, 0.92, 0.94)
+  setCol(2, "nextLevel", dur(timeTo(lvl + 1, r, head)), 0.62, 0.82, 1)
+  setCol(3, "questsReady", "+" .. kfmt(questXP()), 1, 0.82, 0.29, {1, 0.82, 0.29})
+  setCol(4, "rested", restedPct(mx), 0.75, 0.88, 1, {0.62, 0.82, 1})
+end
+
+-- session: nulstilles ved ny login, ikke ved /reload
+local function sess()
+  DB.sess = DB.sess or {start = time(), xp = 0, kills = 0, quests = 0, levels = 0}
+  return DB.sess
+end
+
+bar:SetScript("OnEnter", function(self)
+  GameTooltip:SetOwner(self, "ANCHOR_TOP")
+  GameTooltip:AddLine(NAME, 1, 0.82, 0.3)
+  local xp, mx = UnitXP("player"), UnitXPMax("player")
+  local left = math.max(0, mx - xp)
+  GameTooltip:AddDoubleLine(T("xpLeft"), commas(left), 0.85, 0.85, 0.85, 1, 1, 1)
+  if DB.lastKill and DB.lastKill > 0 then
+    GameTooltip:AddDoubleLine(T("killsTo"), "~" .. math.max(1, math.ceil(left / DB.lastKill)), 0.85, 0.85, 0.85, 1, 0.6, 0.55)
+  end
+  local qr = DB.questRewards
+  if #qr > 0 then
+    local sum = 0
+    for _, v in ipairs(qr) do sum = sum + v end
+    GameTooltip:AddDoubleLine(T("questsTo"), "~" .. math.max(1, math.ceil(left / (sum / #qr))), 0.85, 0.85, 0.85, 1, 0.82, 0.29)
+  end
+  local s = sess()
+  GameTooltip:AddLine(" ")
+  GameTooltip:AddLine(T("session"), 1, 0.82, 0.3)
+  GameTooltip:AddDoubleLine(T("sessTime"), dur(time() - s.start), 0.85, 0.85, 0.85, 1, 1, 1)
+  GameTooltip:AddDoubleLine(T("sessXP"), "+" .. commas(s.xp), 0.85, 0.85, 0.85, 1, 1, 1)
+  GameTooltip:AddDoubleLine(T("sessKills"), tostring(s.kills), 0.85, 0.85, 0.85, 1, 1, 1)
+  GameTooltip:AddDoubleLine(T("sessQuests"), tostring(s.quests), 0.85, 0.85, 0.85, 1, 1, 1)
+  if s.levels > 0 then GameTooltip:AddDoubleLine(T("sessLevels"), "+" .. s.levels, 0.85, 0.85, 0.85, 1, 1, 1) end
+  local list = activeBuffs()
+  if #list > 0 then
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine(T("buffsHead"), 1, 0.82, 0.3)
+    if fedLeft() > 0 then GameTooltip:AddDoubleLine(T("foodTip"), dur(fedLeft()), 0.85, 0.85, 0.85, 0.62, 0.82, 1) end
+    if bagLeft() > 0 then
+      GameTooltip:AddDoubleLine(string.format(T("bagTip"), buffs.bagStacks or 1), dur(bagLeft()), 0.85, 0.85, 0.85, 0.62, 0.82, 1)
+    end
+  end
+  GameTooltip:Show()
+end)
+bar:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+-- Blizzards egen XP-bar (samme rammer som ForeverXP Bar skjuler)
+local BLIZZ_BARS = {"StatusTrackingBarManager", "MainStatusTrackingBarContainer", "MainMenuBarXPBar",
+  "MainMenuExpBar", "MainMenuBarExpBar", "MainMenuBarMaxLevelBar", "ReputationWatchBar"}
+local function applyBlizz()
+  for _, name in ipairs(BLIZZ_BARS) do
+    local fr = _G[name]
+    if fr and type(fr.Hide) == "function" and type(fr.Show) == "function" then
+      pcall(function()
+        if not fr.levelETAHooked and hooksecurefunc then
+          fr.levelETAHooked = true
+          hooksecurefunc(fr, "Show", function(self) if DB and DB.hideBlizz then self:Hide() end end)
+        end
+        if DB.hideBlizz then fr:Hide() elseif fr.levelETAHid then fr:Show() end
+        fr.levelETAHid = DB.hideBlizz
+      end)
+    end
+  end
+end
+
 -- de tre faste raekker
 local function mainRows(y)
   local lvl = UnitLevel("player")
@@ -682,7 +919,7 @@ local function mainRows(y)
   list[#list + 1] = {T("level") .. " 60", "|cffffd24a" .. nice(eta(timeTo(MAXLVL, rL, head), rL), 30) .. "|r"}
 
   for i, it in ipairs(list) do y = setRow(rows[i], y, it[1], it[2], it[3], i == #list) end
-  return y
+  return y, r, head
 end
 
 local function refresh()
@@ -691,15 +928,22 @@ local function refresh()
   f:SetScale(DB.scale)
   updateLabels()
   for _, c in ipairs(rows) do c:Hide() end
-  local y = mainRows(-44)
+  local y, r, head = mainRows(-44)
+  local list = activeBuffs()
+  if #list > 0 then
+    placeChips(f, winChips, list, 14, y - 12); y = y - 22
+  else
+    placeChips(f, winChips, list, 0, 0)
+  end
   if DB.showTimes then y = drawTimes(y) else hideTimes() end
   f:SetHeight(-y + 10)
+  updateBar(r or shortRate(), head or headStart(r or shortRate()))
 end
 
 -- ---------- indstillinger ----------
 local SW, COL = 520, 260
 local S = CreateFrame("Frame", "LevelETASettings", UIParent)
-S:SetSize(SW, 506); S:SetPoint("CENTER"); S:SetFrameStrata("DIALOG"); S:Hide()
+S:SetSize(SW, 538); S:SetPoint("CENTER"); S:SetFrameStrata("DIALOG"); S:Hide()
 skin(S, "Wide", 1040, 2048)
 movable(S, function() return true end)
 S:SetScript("OnDragStop", S.StopMovingOrSizing)
@@ -790,6 +1034,11 @@ slider(-150, "bed", 0, 1410, 30, function() return DB.sleepStart end, function(v
 slider(-196, "breakAt", 0, 1410, 30, function() return DB.breakStart end, function(v) DB.breakStart = v end, clockFmt)
 slider(-242, "breakLen", 0, 180, 15, function() return DB.breakLen end, function(v) DB.breakLen = v end,
   function(v) return v == 0 and T("none") or (v .. " " .. T("min")) end)
+section(-294, "barHead")
+toggle(-316, "showBar", function() return DB.showBar end, function(v) DB.showBar = v end)
+toggle(-344, "hideBlizz", function() return DB.hideBlizz end, function(v) DB.hideBlizz = v; applyBlizz() end)
+slider(-376, "barSize", 0.6, 2.0, 0.05, function() return DB.barScale end, function(v) DB.barScale = v end,
+  function(v) return string.format("%d%%", math.floor(v * 100 + 0.5)) end)
 
 -- hoejre kolonne: visning, quests og rested
 colX = COL
@@ -809,14 +1058,14 @@ toggle(-360, "inn", function() return DB.inn end, function(v) DB.inn = v end)
 
 -- info: virker alene og sammen med ForeverXP Bar
 local infoLine = S:CreateTexture(nil, "ARTWORK")
-infoLine:SetPoint("TOPLEFT", 18, -396); infoLine:SetPoint("TOPRIGHT", -18, -396); infoLine:SetHeight(1)
+infoLine:SetPoint("TOPLEFT", 18, -428); infoLine:SetPoint("TOPRIGHT", -18, -428); infoLine:SetHeight(1)
 infoLine:SetColorTexture(1, 1, 1, 0.06)
-local infoText = fs(S, F_SEMI, 11); infoText:SetPoint("TOPLEFT", 18, -408); infoText:SetTextColor(0.55, 0.58, 0.64)
+local infoText = fs(S, F_SEMI, 11); infoText:SetPoint("TOPLEFT", 18, -440); infoText:SetTextColor(0.55, 0.58, 0.64)
 label(infoText, "standalone")
 local fxbDot = S:CreateTexture(nil, "ARTWORK")
-fxbDot:SetSize(7, 7); fxbDot:SetPoint("TOPLEFT", 19, -428); fxbDot:SetTexture("Interface\\Buttons\\WHITE8x8")
+fxbDot:SetSize(7, 7); fxbDot:SetPoint("TOPLEFT", 19, -460); fxbDot:SetTexture("Interface\\Buttons\\WHITE8x8")
 if fxbDot.SetMask then fxbDot:SetMask("Interface\\CharacterFrame\\TempPortraitAlphaMask") end
-local fxbText = fs(S, F_SEMI, 11); fxbText:SetPoint("TOPLEFT", 32, -426)
+local fxbText = fs(S, F_SEMI, 11); fxbText:SetPoint("TOPLEFT", 32, -458)
 
 -- knapper i bunden
 local langBtn = pill("", 150); langBtn:SetPoint("BOTTOMLEFT", 18, 16); label(langBtn.text, "language")
@@ -928,6 +1177,29 @@ f:RegisterEvent("UNIT_AURA")
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
 f:RegisterEvent("PLAYER_DEAD")
 f:RegisterEvent("QUEST_TURNED_IN")
+f:RegisterEvent("CHAT_MSG_COMBAT_XP_GAIN")
+-- XP fra et kill staar i chatten: "<mob> dies, you gain N experience." (bygget af spillets egen tekst)
+local killPattern
+local function killXP(msg)
+  if type(msg) ~= "string" then return nil end
+  if issecretvalue then
+    local ok, secret = pcall(issecretvalue, msg)
+    if not ok or secret then return nil end
+  end
+  if killPattern == nil then
+    killPattern = false
+    local g = _G.COMBATLOG_XPGAIN_FIRSTPERSON
+    if type(g) == "string" and g:find("%%d") then
+      local p = g:gsub("%%s", "\1"):gsub("%%d", "\2")
+      p = p:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
+      p = p:gsub("\1", ".-"):gsub("\2", "(%%d+)")
+      killPattern = "^" .. p
+    end
+  end
+  local ok, n = pcall(function() return killPattern and msg:match(killPattern) end)
+  return ok and tonumber(n) or nil
+end
+
 f:SetScript("OnEvent", function(self, event, a1, a2)
   if event == "ADDON_LOADED" and a1 == ADDON then
     LevelETADB = LevelETADB or {}
@@ -939,8 +1211,13 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
     if DB.point then self:SetPoint(DB.point[1], UIParent, DB.point[2], DB.point[3], DB.point[4])
     else self:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -220, -200) end
     if DB.hidden then self:Hide() end
+    bar:ClearAllPoints()
+    if DB.barPoint then bar:SetPoint(DB.barPoint[1], UIParent, DB.barPoint[2], DB.barPoint[3], DB.barPoint[4])
+    else bar:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 150) end
     placeButton()
   elseif event == "PLAYER_ENTERING_WORLD" then
+    if a1 or not DB.sess then DB.sess = {start = time(), xp = 0, kills = 0, quests = 0, levels = 0} end  -- ny login
+    applyBlizz()
     lastXP, lastMax, lastLevel, lastEx = UnitXP("player"), UnitXPMax("player"), UnitLevel("player"), restedXP()
     questDirty = true
     if C_Timer and C_Timer.After then C_Timer.After(3, requestPlayed) end
@@ -966,6 +1243,14 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
     buffsDirty = true
   elseif event == "QUEST_TURNED_IN" then
     lastQuestAt = clock()
+    sess().quests = sess().quests + 1
+    if type(a2) == "number" and a2 > 0 then
+      table.insert(DB.questRewards, a2)
+      while #DB.questRewards > 10 do table.remove(DB.questRewards, 1) end
+    end
+  elseif event == "CHAT_MSG_COMBAT_XP_GAIN" then
+    local n = killXP(a1)
+    if n and n > 0 then DB.lastKill = n; sess().kills = sess().kills + 1 end
   elseif event == "UPDATE_EXHAUSTION" then
     local ex = restedXP()
     if lastEx and ex > lastEx then lastEx = ex end  -- rested steg (inn), ikke bonus
@@ -975,6 +1260,7 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
     if lastLevel and lvl > lastLevel then
       gain = (lastMax - lastXP) + xp
       DB.times[lvl] = DB.play
+      sess().levels = sess().levels + 1
       playedLevelTime, playedAt = 0, time()
     else
       gain = xp - (lastXP or xp)
@@ -982,6 +1268,7 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
     local ex = restedXP()
     local bonus = math.max(0, math.min(gain, (lastEx or ex) - ex))  -- brugt rested = bonus-XP
     if gain > 0 then
+      sess().xp = sess().xp + gain
       -- quest-XP eller kill-XP, og hvor meget af det dine buffs gav (taeller ikke som tempo)
       local q = clock() - lastQuestAt < 2
       local mult = 1 + ((not q and fedLeft() > 0) and FOOD_BONUS or 0) + ((bagLeft() > 0) and (buffs.bagStacks or 0) / 100 or 0)

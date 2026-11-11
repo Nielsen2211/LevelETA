@@ -20,6 +20,12 @@ Turn on **Show level times** in the settings to see how long each of your last l
 
 ![LevelETA level times](screenshots/level-times.png)
 
+### XP bar (optional)
+
+Turn on **Show XP bar** in the settings for an XP bar in the same style. It shows your XP, completed quests you have not turned in (gold) and your rested XP (light blue), with XP per hour, time to next level, ready quest XP and rested XP in percent below the bar. Active XP buffs (food and the Cozy Sleeping Bag) are shown with the time they have left. Hover the bar for kills and quests to level and stats for this session. You can also hide Blizzard's own XP bar. It is off by default.
+
+When you have an XP buff, it is also shown in the window under the three rows.
+
 ---
 
 ## Works on its own, and with ForeverXP Bar
@@ -68,6 +74,7 @@ Right click the minimap button, or type `/lp`.
 | **Show window / Lock window / Size** | Display options |
 | **Show level times** | Show how long each of your last levels took (off by default) |
 | **Levels in the list** | How many levels the level times list shows (3 to 30, default 10) |
+| **Show XP bar / Hide Blizzard's XP bar / Bar size** | The optional XP bar (off by default) |
 | **Quest buffer** | How much of your ready quest XP to ignore (default 25 %) |
 | **Rested XP while logged out** | Count rested XP gained while logged out in an inn |
 | **Language** | English or Danish |
@@ -86,7 +93,7 @@ Left click the minimap button to show or hide the window.
 
 LevelETA viser, hvilket level du er på, når du stopper med at spille i dag, hvornår du rammer dit næste tiende level, og hvornår du rammer level 60.
 
-Den virker helt alene og bruger `/played` og sine egne målinger. Er ForeverXP Bar installeret, bruger den også dens levelhistorik, så den er præcis fra første dag. Indstillinger: højreklik på minimap-knappen eller skriv `/lp`. Sproget kan skiftes til dansk i indstillingerne. Under Visning kan du slå level-tider til og se, hvor lang tid dine sidste levels tog. Du vælger selv, hvor mange levels listen viser.
+Den virker helt alene og bruger `/played` og sine egne målinger. Er ForeverXP Bar installeret, bruger den også dens levelhistorik, så den er præcis fra første dag. Indstillinger: højreklik på minimap-knappen eller skriv `/lp`. Sproget kan skiftes til dansk i indstillingerne. Under Visning kan du slå level-tider til og se, hvor lang tid dine sidste levels tog. Du vælger selv, hvor mange levels listen viser. Under XP-bar kan du slå en XP-bar til i samme stil og skjule Blizzards egen.
 
 ---
 
