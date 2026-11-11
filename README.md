@@ -1,10 +1,20 @@
 # LevelETA
 
-**When will I hit my next level milestone, and level 60?**
+**LevelETA tells you when you will reach your next levels.**
+
+- **When you hit your next tenth level and level 60**, as real dates like *Friday 18:30*
+- **What level you will be when you stop playing today**
+- **Optional:** your level times, an XP bar, and an activity bar with a goal
+
+It learns how fast you level and knows when you play. Works on its own, and uses ForeverXP Bar data if you have it.
 
 ![LevelETA window](screenshots/window.png)
 
-LevelETA is a small, clean window for World of Warcraft: Forever that answers three questions while you level:
+---
+
+## What the window shows
+
+The window answers three questions while you level:
 
 | Row | What it tells you |
 |---|---|
