@@ -43,6 +43,13 @@ local LOC = {
     xpLeft = "XP left", killsTo = "Kills to level", questsTo = "Quests to level", session = "This session",
     sessTime = "Time", sessXP = "XP", sessKills = "Kills", sessQuests = "Quests", sessLevels = "Levels",
     buffsHead = "XP buffs",
+    showAct = "Show activity bar", actHead = "Activity", actLast = "Active, last 10 min", thisLevel = "This level",
+    thisSession = "This session", catActive = "Fighting and questing", catTravel = "Travelling", catFlight = "Flying",
+    catTown = "In town", catIdle = "AFK", catDead = "Dead", deaths = "Deaths", activeShare = "Active",
+    goalHead = "Goal", useGoal = "Use goal", goalLevel = "Level", goalDay = "Day", goalTime = "Time",
+    needAct = "You need to be active", atPace = "At your pace now", ahead = "Ahead by", behind = "Behind by",
+    impossible = "Not reachable at your pace", goalDone = "Goal reached!", clickGoal = "Click: set goal",
+    goalBtn = "Goal", dh = "%dd %dh",
   },
   da = {
     level = "Level", today = "I dag kl. %s", tomorrow = "I morgen kl. %s",
@@ -66,6 +73,13 @@ local LOC = {
     xpLeft = "XP tilbage", killsTo = "Kills til level", questsTo = "Quests til level", session = "Denne session",
     sessTime = "Tid", sessXP = "XP", sessKills = "Kills", sessQuests = "Quests", sessLevels = "Levels",
     buffsHead = "XP-buffs",
+    showAct = "Vis aktivitets-bjælke", actHead = "Aktivitet", actLast = "Aktiv, sidste 10 min", thisLevel = "Dette level",
+    thisSession = "Denne session", catActive = "Kamp og quests", catTravel = "Rejser", catFlight = "Flyver",
+    catTown = "I byen", catIdle = "AFK", catDead = "Død", deaths = "Dødsfald", activeShare = "Aktiv",
+    goalHead = "Mål", useGoal = "Brug mål", goalLevel = "Level", goalDay = "Dag", goalTime = "Klokken",
+    needAct = "Du skal være aktiv", atPace = "Med dit tempo nu", ahead = "Foran med", behind = "Bagud med",
+    impossible = "Kan ikke nås med dit tempo", goalDone = "Mål nået!", clickGoal = "Klik: sæt mål",
+    goalBtn = "Mål", dh = "%dd %dt",
   },
 }
 local function T(k) return (LOC[(DB and DB.lang) or "en"] or LOC.en)[k] end
@@ -79,6 +93,7 @@ local defaults = {
   questBuffer = 25, inn = true, scale = 1, lang = "en", locked = false, hidden = false, mmAngle = 200,
   showTimes = false, timesCount = 10,
   showBar = false, hideBlizz = false, barScale = 1, questRewards = {},
+  showAct = true, act = {}, goalOn = false, goalLevel = 60,
 }
 
 -- ---------- tid og datoer ----------
@@ -885,6 +900,199 @@ local function applyBlizz()
   end
 end
 
+-- ---------- aktivitet: hvad bruger du tiden paa, et sekund ad gangen ----------
+-- aktiv = i kamp, eller XP / quest inden for de sidste 25 sek (samme regel som ForeverXP Bar)
+local ACT_CATS = {"active", "travel", "flight", "town", "idle", "dead"}
+local CAT_KEY = {active = "catActive", travel = "catTravel", flight = "catFlight", town = "catTown", idle = "catIdle", dead = "catDead"}
+local ACTIVE_GRACE = 25
+local lastActiveAt = -1000
+local TOWN_FRAMES = {"MerchantFrame", "MailFrame", "AuctionFrame", "AuctionHouseFrame", "BankFrame", "TradeFrame",
+  "GuildBankFrame", "ClassTrainerFrame"}
+
+local function flag(fn, ...)
+  if not fn then return false end
+  local ok, v = pcall(fn, ...)
+  if not ok then return false end
+  if issecretvalue then
+    local o2, secret = pcall(issecretvalue, v)
+    if not o2 or secret then return false end
+  end
+  return v and true or false
+end
+
+local function classify()
+  if flag(UnitIsDeadOrGhost, "player") then return "dead" end
+  if flag(UnitOnTaxi, "player") then return "flight" end
+  if (InCombatLockdown and InCombatLockdown()) or clock() - lastActiveAt < ACTIVE_GRACE then return "active" end
+  for _, n in ipairs(TOWN_FRAMES) do
+    local fr = _G[n]
+    if fr and fr.IsShown and flag(fr.IsShown, fr) then return "town" end
+  end
+  if flag(IsResting) then return "town" end
+  if flag(UnitIsAFK, "player") then return "idle" end
+  local sp
+  if GetUnitSpeed then
+    local ok, v = pcall(GetUnitSpeed, "player")
+    sp = ok and num(v)
+  end
+  if sp and sp > 0 then return "travel" end
+  return "idle"
+end
+
+local function actTable(t)
+  t.total = t.total or 0
+  return t
+end
+local function levelAct(lvl)
+  lvl = lvl or UnitLevel("player")
+  DB.act[lvl] = DB.act[lvl] or {total = 0}
+  return DB.act[lvl]
+end
+
+local function sampleActivity(dt)
+  local cat = classify()
+  local a = actTable(levelAct())
+  a[cat] = (a[cat] or 0) + dt; a.total = a.total + dt
+  local s = sess(); s.act = actTable(s.act or {})
+  s.act[cat] = (s.act[cat] or 0) + dt; s.act.total = s.act.total + dt
+  local on = (cat == "active") and 1 or 0
+  if not DB.actEma then DB.actEma = (a.total > 60 and (a.active or 0) / a.total) or 0.6 end
+  if not DB.actLong then DB.actLong = DB.actEma end
+  DB.actEma = DB.actEma + (on - DB.actEma) * math.min(1, dt / 600)    -- de sidste ca. 10 min
+  DB.actLong = DB.actLong + (on - DB.actLong) * math.min(1, dt / 7200) -- dit normale niveau, ca. 2 timer
+end
+
+-- ---------- maal: et level inden en bestemt tid ----------
+local function goalDay()
+  if not DB.goalAt then return 3 end
+  return math.max(0, math.floor((midnight(DB.goalAt) - midnight(time())) / 86400 + 0.5))
+end
+local function goalMin()
+  if not DB.goalAt then return 22 * 60 end
+  local d = date("*t", DB.goalAt)
+  return d.hour * 60 + d.min
+end
+local function setGoal(day, m)
+  local d = date("*t")
+  d.day, d.hour, d.min, d.sec = d.day + day, math.floor(m / 60), m % 60, 0
+  DB.goalAt = time(d)
+end
+
+-- hvor aktiv du skal vaere for at naa maalet: dit normale aktivitetsniveau gange hvor meget
+-- hurtigere end dit tempo nu du skal gaa (spilletid du skal bruge / spilletid du har)
+local function goalInfo(rL, head)
+  if not DB.goalOn or not DB.goalAt then return nil end
+  local g = {level = DB.goalLevel, at = DB.goalAt}
+  if UnitLevel("player") >= g.level then g.done = true; return g end
+  local need = timeTo(g.level, rL, head)
+  g.finish = eta(need, rL)
+  g.diff = g.at - g.finish
+  local avail = playableUntil(g.at)
+  g.req = avail > 0 and (DB.actLong or 0.6) * need / avail or 9
+  return g
+end
+
+-- lange tider (over et doegn) i dage og timer
+local function longDur(sec)
+  if sec < 86400 then return dur(sec) end
+  return string.format(T("dh"), math.floor(sec / 86400), math.floor(sec % 86400 / 3600))
+end
+
+-- ---------- den lille boks ved siden af XP-baren ----------
+local VH = 56
+local box = CreateFrame("Button", "LevelETAActivity", bar)
+box:SetSize(40, 96); box:SetPoint("TOPLEFT", bar, "TOPRIGHT", 6, 0)
+skin(box, "Side", 80, 128)
+box:RegisterForClicks("LeftButtonUp")
+box:RegisterForDrag("LeftButton")
+box:SetScript("OnDragStart", function() if not DB.locked then bar:StartMoving() end end)
+box:SetScript("OnDragStop", function() local fn = bar:GetScript("OnDragStop"); if fn then fn(bar) end end)
+local vt = CreateFrame("Frame", nil, box)
+vt:SetSize(8, VH); vt:SetPoint("TOP", box, "TOP", 0, -14)
+local vmask
+if vt.CreateMaskTexture then
+  vmask = vt:CreateMaskTexture()
+  if vmask then
+    vmask:SetTexture(TEX .. "VMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    vmask:SetAllPoints(vt)
+  end
+end
+local vbg = vt:CreateTexture(nil, "BACKGROUND"); vbg:SetAllPoints(); vbg:SetColorTexture(1, 1, 1, 0.08)
+local vfill = vt:CreateTexture(nil, "ARTWORK"); vfill:SetPoint("BOTTOMLEFT"); vfill:SetPoint("BOTTOMRIGHT"); vfill:SetHeight(1)
+if vmask then
+  if vbg.AddMaskTexture then vbg:AddMaskTexture(vmask) end
+  if vfill.AddMaskTexture then vfill:AddMaskTexture(vmask) end
+end
+local vmark = box:CreateTexture(nil, "OVERLAY"); vmark:SetSize(14, 2); vmark:SetColorTexture(1, 1, 1, 0.92)
+local vtext = fs(box, F_BOLD, 10); vtext:SetPoint("CENTER", box, "TOP", 0, -83)
+
+local GREEN, YELLOW, RED = {0.47, 0.86, 0.59}, {1, 0.82, 0.29}, {1, 0.42, 0.42}
+local lastGoal
+
+local function updateActivity(rL, head)
+  if not DB.showAct then box:Hide(); return end
+  box:Show()
+  local v = DB.actEma or 0.6
+  local g = goalInfo(rL, head)
+  lastGoal = g
+  local col
+  if g and not g.done then
+    col = (g.req <= 1 and v >= g.req) and GREEN or RED
+    vmark:ClearAllPoints(); vmark:SetPoint("CENTER", vt, "BOTTOM", 0, VH * math.min(1, g.req)); vmark:Show()
+  else
+    col = (g and g.done) and GREEN or (v >= 0.75 and GREEN) or (v >= 0.5 and YELLOW) or RED
+    vmark:Hide()
+  end
+  vfill:SetHeight(math.max(1, VH * math.max(0, math.min(1, v))))
+  vfill:SetColorTexture(col[1], col[2], col[3], 0.92)
+  vtext:SetText(math.floor(v * 100 + 0.5) .. "%"); vtext:SetTextColor(col[1], col[2], col[3])
+end
+
+local function addShares(t, title)
+  if not t or (t.total or 0) < 60 then return end
+  GameTooltip:AddLine(" ")
+  GameTooltip:AddLine(title, 1, 0.82, 0.3)
+  for _, k in ipairs(ACT_CATS) do
+    local secs = t[k] or 0
+    if secs >= 1 then
+      GameTooltip:AddDoubleLine(T(CAT_KEY[k]), string.format("%d%%  %s", math.floor(secs / t.total * 100 + 0.5), dur(secs)),
+        0.85, 0.85, 0.85, 1, 1, 1)
+    end
+  end
+  if (t.deaths or 0) > 0 then GameTooltip:AddDoubleLine(T("deaths"), tostring(t.deaths), 0.85, 0.85, 0.85, 1, 0.42, 0.42) end
+end
+
+box:SetScript("OnEnter", function(self)
+  GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+  GameTooltip:AddLine(T("actHead"), 1, 0.82, 0.3)
+  GameTooltip:AddDoubleLine(T("actLast"), math.floor((DB.actEma or 0.6) * 100 + 0.5) .. "%", 0.85, 0.85, 0.85, 1, 1, 1)
+  addShares(levelAct(), T("thisLevel"))
+  addShares(sess().act, T("thisSession"))
+  local g = lastGoal
+  GameTooltip:AddLine(" ")
+  if g then
+    GameTooltip:AddLine(T("goalHead"), 1, 0.82, 0.3)
+    GameTooltip:AddLine(T("level") .. " " .. g.level .. ", " .. nice(g.at), 0.85, 0.85, 0.85)
+    if g.done then
+      GameTooltip:AddLine(T("goalDone"), GREEN[1], GREEN[2], GREEN[3])
+    elseif g.req > 1 then
+      GameTooltip:AddLine(T("impossible"), RED[1], RED[2], RED[3])
+      GameTooltip:AddDoubleLine(T("atPace"), nice(g.finish, 15), 0.85, 0.85, 0.85, 1, 1, 1)
+    else
+      GameTooltip:AddDoubleLine(T("needAct"), math.floor(g.req * 100 + 0.5) .. "%", 0.85, 0.85, 0.85, 1, 1, 1)
+      GameTooltip:AddDoubleLine(T("atPace"), nice(g.finish, 15), 0.85, 0.85, 0.85, 1, 1, 1)
+      if g.diff >= 0 then
+        GameTooltip:AddDoubleLine(T("ahead"), longDur(g.diff), 0.85, 0.85, 0.85, GREEN[1], GREEN[2], GREEN[3])
+      else
+        GameTooltip:AddDoubleLine(T("behind"), longDur(-g.diff), 0.85, 0.85, 0.85, RED[1], RED[2], RED[3])
+      end
+    end
+  end
+  GameTooltip:AddLine(T("clickGoal"), 0.6, 0.6, 0.6)
+  GameTooltip:Show()
+end)
+box:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
 -- de tre faste raekker
 local function mainRows(y)
   local lvl = UnitLevel("player")
@@ -919,7 +1127,7 @@ local function mainRows(y)
   list[#list + 1] = {T("level") .. " 60", "|cffffd24a" .. nice(eta(timeTo(MAXLVL, rL, head), rL), 30) .. "|r"}
 
   for i, it in ipairs(list) do y = setRow(rows[i], y, it[1], it[2], it[3], i == #list) end
-  return y, r, head
+  return y, r, head, rL
 end
 
 local function refresh()
@@ -928,7 +1136,7 @@ local function refresh()
   f:SetScale(DB.scale)
   updateLabels()
   for _, c in ipairs(rows) do c:Hide() end
-  local y, r, head = mainRows(-44)
+  local y, r, head, rL = mainRows(-44)
   local list = activeBuffs()
   if #list > 0 then
     placeChips(f, winChips, list, 14, y - 12); y = y - 22
@@ -937,13 +1145,16 @@ local function refresh()
   end
   if DB.showTimes then y = drawTimes(y) else hideTimes() end
   f:SetHeight(-y + 10)
-  updateBar(r or shortRate(), head or headStart(r or shortRate()))
+  r = r or shortRate()
+  head = head or headStart(r)
+  updateBar(r, head)
+  if bar:IsShown() then updateActivity(rL or longRate(), head) end
 end
 
 -- ---------- indstillinger ----------
 local SW, COL = 520, 260
 local S = CreateFrame("Frame", "LevelETASettings", UIParent)
-S:SetSize(SW, 538); S:SetPoint("CENTER"); S:SetFrameStrata("DIALOG"); S:Hide()
+S:SetSize(SW, 566); S:SetPoint("CENTER"); S:SetFrameStrata("DIALOG"); S:Hide()
 skin(S, "Wide", 1040, 2048)
 movable(S, function() return true end)
 S:SetScript("OnDragStop", S.StopMovingOrSizing)
@@ -960,31 +1171,32 @@ closeX:SetScript("OnClick", function() S:Hide() end)
 
 local controls = {}
 local colX = 0
+local host, hostControls = S, controls  -- hvilket vindue byggeklodserne tegner paa
 
 local function section(y, key)
-  local t = fs(S, F_BOLD, 11); t:SetPoint("TOPLEFT", colX + 18, y); t:SetTextColor(1, 0.82, 0.4)
+  local t = fs(host, F_BOLD, 11); t:SetPoint("TOPLEFT", colX + 18, y); t:SetTextColor(1, 0.82, 0.4)
   label(t, key)
 end
 
 local function toggle(y, lkey, get, set)
-  local c = CreateFrame("CheckButton", nil, S)
-  c:SetSize(32, 18); c:SetPoint("TOPRIGHT", S, "TOPLEFT", colX + COL - 18, y)
+  local c = CreateFrame("CheckButton", nil, host)
+  c:SetSize(32, 18); c:SetPoint("TOPRIGHT", host, "TOPLEFT", colX + COL - 18, y)
   local off = c:CreateTexture(nil, "ARTWORK"); off:SetAllPoints(); off:SetTexture(TEX .. "ToggleOff"); off:SetTexCoord(0, 1, 0, 36 / 64)
   local on = c:CreateTexture(nil, "ARTWORK"); on:SetAllPoints(); on:SetTexture(TEX .. "ToggleOn"); on:SetTexCoord(0, 1, 0, 36 / 64)
-  local t = fs(S, F_SEMI, 12); t:SetPoint("TOPLEFT", colX + 18, y - 2); t:SetTextColor(0.85, 0.87, 0.92)
+  local t = fs(host, F_SEMI, 12); t:SetPoint("TOPLEFT", colX + 18, y - 2); t:SetTextColor(0.85, 0.87, 0.92)
   label(t, lkey)
   local function show() local v = get(); on:SetShown(v); off:SetShown(not v) end
   c:SetScript("OnClick", function() set(not get()); show(); refresh() end)
   c.load = show
-  controls[#controls + 1] = c
+  hostControls[#hostControls + 1] = c
 end
 
 local function slider(y, lkey, minV, maxV, step, get, set, fmt)
-  local t = fs(S, F_SEMI, 12); t:SetPoint("TOPLEFT", colX + 18, y); t:SetTextColor(0.85, 0.87, 0.92)
+  local t = fs(host, F_SEMI, 12); t:SetPoint("TOPLEFT", colX + 18, y); t:SetTextColor(0.85, 0.87, 0.92)
   label(t, lkey)
-  local val = fs(S, F_BOLD, 12); val:SetPoint("TOPRIGHT", S, "TOPLEFT", colX + COL - 18, y); val:SetTextColor(1, 0.82, 0.4)
+  local val = fs(host, F_BOLD, 12); val:SetPoint("TOPRIGHT", host, "TOPLEFT", colX + COL - 18, y); val:SetTextColor(1, 0.82, 0.4)
   local tw = COL - 36
-  local s = CreateFrame("Slider", nil, S)
+  local s = CreateFrame("Slider", nil, host)
   s:SetOrientation("HORIZONTAL")
   s:SetSize(tw, 16); s:SetPoint("TOPLEFT", colX + 18, y - 18)
   local track = s:CreateTexture(nil, "BACKGROUND")
@@ -1010,11 +1222,11 @@ local function slider(y, lkey, minV, maxV, step, get, set, fmt)
     set(v); refresh()
   end)
   s.load = function() s.loading = true; s:SetValue(get()); paint(get()); s.loading = false end
-  controls[#controls + 1] = s
+  hostControls[#hostControls + 1] = s
 end
 
 local function pill(text, w)
-  local b = CreateFrame("Button", nil, S)
+  local b = CreateFrame("Button", nil, host)
   b:SetSize(w, 24)
   local bg = b:CreateTexture(nil, "BACKGROUND"); bg:SetAllPoints(); bg:SetTexture(TEX .. "Pill"); bg:SetTexCoord(0, 240 / 256, 0, 48 / 64)
   b.text = fs(b, F_SEMI, 12); b.text:SetPoint("CENTER"); b.text:SetTextColor(0.85, 0.87, 0.92)
@@ -1037,7 +1249,8 @@ slider(-242, "breakLen", 0, 180, 15, function() return DB.breakLen end, function
 section(-294, "barHead")
 toggle(-316, "showBar", function() return DB.showBar end, function(v) DB.showBar = v end)
 toggle(-344, "hideBlizz", function() return DB.hideBlizz end, function(v) DB.hideBlizz = v; applyBlizz() end)
-slider(-376, "barSize", 0.6, 2.0, 0.05, function() return DB.barScale end, function(v) DB.barScale = v end,
+toggle(-372, "showAct", function() return DB.showAct end, function(v) DB.showAct = v end)
+slider(-404, "barSize", 0.6, 2.0, 0.05, function() return DB.barScale end, function(v) DB.barScale = v end,
   function(v) return string.format("%d%%", math.floor(v * 100 + 0.5)) end)
 
 -- hoejre kolonne: visning, quests og rested
@@ -1058,16 +1271,16 @@ toggle(-360, "inn", function() return DB.inn end, function(v) DB.inn = v end)
 
 -- info: virker alene og sammen med ForeverXP Bar
 local infoLine = S:CreateTexture(nil, "ARTWORK")
-infoLine:SetPoint("TOPLEFT", 18, -428); infoLine:SetPoint("TOPRIGHT", -18, -428); infoLine:SetHeight(1)
+infoLine:SetPoint("TOPLEFT", 18, -456); infoLine:SetPoint("TOPRIGHT", -18, -456); infoLine:SetHeight(1)
 infoLine:SetColorTexture(1, 1, 1, 0.06)
-local infoText = fs(S, F_SEMI, 11); infoText:SetPoint("TOPLEFT", 18, -440); infoText:SetTextColor(0.55, 0.58, 0.64)
+local infoText = fs(S, F_SEMI, 11); infoText:SetPoint("TOPLEFT", 18, -468); infoText:SetTextColor(0.55, 0.58, 0.64)
 label(infoText, "standalone")
 local fxbDot = S:CreateTexture(nil, "ARTWORK")
-fxbDot:SetSize(7, 7); fxbDot:SetPoint("TOPLEFT", 19, -460); fxbDot:SetTexture(TEX .. "Dot")
-local fxbText = fs(S, F_SEMI, 11); fxbText:SetPoint("TOPLEFT", 32, -458)
+fxbDot:SetSize(7, 7); fxbDot:SetPoint("TOPLEFT", 19, -488); fxbDot:SetTexture(TEX .. "Dot")
+local fxbText = fs(S, F_SEMI, 11); fxbText:SetPoint("TOPLEFT", 32, -486)
 
 -- knapper i bunden
-local langBtn = pill("", 150); langBtn:SetPoint("BOTTOMLEFT", 18, 16); label(langBtn.text, "language")
+local langBtn = pill("", 140); langBtn:SetPoint("BOTTOMLEFT", 18, 16); label(langBtn.text, "language")
 langBtn:SetScript("OnClick", function()
   DB.lang = (DB.lang == "da") and "en" or "da"
   updateLabels(); refresh()
@@ -1079,6 +1292,62 @@ resetBtn:SetScript("OnClick", function()
 end)
 local doneBtn = pill("", 100); doneBtn:SetPoint("BOTTOMRIGHT", -18, 16); label(doneBtn.text, "close")
 doneBtn:SetScript("OnClick", function() S:Hide() end)
+
+-- maal-vinduet (aabnes fra aktivitets-boksen, knappen her eller /lp goal)
+local G = CreateFrame("Frame", "LevelETAGoal", UIParent)
+G:SetSize(260, 290); G:SetPoint("CENTER", 0, 40); G:SetFrameStrata("DIALOG"); G:Hide()
+skin(G, "Panel", 520, 1024)
+movable(G, function() return true end)
+G:SetScript("OnDragStop", G.StopMovingOrSizing)
+tinsert(UISpecialFrames, "LevelETAGoal")
+label(header(G), "goalHead")
+local gX = CreateFrame("Button", nil, G)
+gX:SetSize(20, 20); gX:SetPoint("TOPRIGHT", -10, -10)
+local gXT = fs(gX, F_BOLD, 16); gXT:SetPoint("CENTER"); gXT:SetText("×"); gXT:SetTextColor(0.55, 0.58, 0.64)
+gX:SetScript("OnClick", function() G:Hide() end)
+
+local goalControls = {}
+host, hostControls, colX = G, goalControls, 0
+toggle(-52, "useGoal", function() return DB.goalOn end, function(v)
+  DB.goalOn = v
+  if v and not DB.goalAt then setGoal(goalDay(), goalMin()) end
+end)
+slider(-84, "goalLevel", 2, MAXLVL, 1, function() return DB.goalLevel end, function(v) DB.goalLevel = v end,
+  function(v) return tostring(v) end)
+slider(-130, "goalDay", 0, 14, 1, goalDay, function(v) setGoal(v, goalMin()) end, function(v)
+  if v == 0 then return T("todayW") elseif v == 1 then return T("tomorrowW") end
+  local d = date("*t", time() + v * 86400)
+  if v < 7 then return T("daysFull")[d.wday] end
+  return DB.lang == "da" and string.format("%d. %s", d.day, T("months")[d.month]) or string.format("%s %d", T("months")[d.month], d.day)
+end)
+slider(-176, "goalTime", 0, 1410, 30, goalMin, function(v) setGoal(goalDay(), v) end, clockFmt)
+local gSum = fs(G, F_BOLD, 12); gSum:SetPoint("TOPLEFT", 18, -226); gSum:SetTextColor(1, 0.82, 0.4)
+local gDone = pill("", 100); gDone:SetPoint("BOTTOMRIGHT", -18, 16); label(gDone.text, "close")
+gDone:SetScript("OnClick", function() G:Hide() end)
+host, hostControls = S, controls
+
+local function paintGoalSummary()
+  if DB.goalOn and DB.goalAt then
+    gSum:SetText(T("level") .. " " .. DB.goalLevel .. ", " .. nice(DB.goalAt))
+  else
+    gSum:SetText("")
+  end
+end
+G:SetScript("OnShow", function()
+  updateLabels()
+  for _, c in ipairs(goalControls) do c.load() end
+  paintGoalSummary()
+end)
+local gAcc = 0
+G:SetScript("OnUpdate", function(_, el)
+  gAcc = gAcc + el
+  if gAcc > 0.2 then gAcc = 0; paintGoalSummary() end
+end)
+local function toggleGoal() G:SetShown(not G:IsShown()) end
+box:SetScript("OnClick", toggleGoal)
+
+local goalBtn = pill("", 80); goalBtn:SetPoint("LEFT", resetBtn, "RIGHT", 10, 0); label(goalBtn.text, "goalBtn")
+goalBtn:SetScript("OnClick", toggleGoal)
 
 S:SetScript("OnShow", function()
   updateLabels()
@@ -1177,6 +1446,7 @@ f:RegisterEvent("PLAYER_REGEN_ENABLED")
 f:RegisterEvent("PLAYER_DEAD")
 f:RegisterEvent("QUEST_TURNED_IN")
 f:RegisterEvent("CHAT_MSG_COMBAT_XP_GAIN")
+f:RegisterEvent("PLAYER_REGEN_DISABLED")
 -- XP fra et kill staar i chatten: "<mob> dies, you gain N experience." (bygget af spillets egen tekst)
 local killPattern
 local function killXP(msg)
@@ -1240,8 +1510,13 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
   elseif event == "PLAYER_DEAD" then
     buffs.fedUntil = nil  -- food buff forsvinder ved doed, soveposen bliver
     buffsDirty = true
+    local a = levelAct(); a.deaths = (a.deaths or 0) + 1
+    local s = sess(); s.act = actTable(s.act or {}); s.act.deaths = (s.act.deaths or 0) + 1
+  elseif event == "PLAYER_REGEN_DISABLED" then
+    lastActiveAt = clock()
   elseif event == "QUEST_TURNED_IN" then
     lastQuestAt = clock()
+    lastActiveAt = clock()
     sess().quests = sess().quests + 1
     if type(a2) == "number" and a2 > 0 then
       table.insert(DB.questRewards, a2)
@@ -1268,6 +1543,7 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
     local bonus = math.max(0, math.min(gain, (lastEx or ex) - ex))  -- brugt rested = bonus-XP
     if gain > 0 then
       sess().xp = sess().xp + gain
+      lastActiveAt = clock()
       -- quest-XP eller kill-XP, og hvor meget af det dine buffs gav (taeller ikke som tempo)
       local q = clock() - lastQuestAt < 2
       local mult = 1 + ((not q and fedLeft() > 0) and FOOD_BONUS or 0) + ((bagLeft() > 0) and (buffs.bagStacks or 0) / 100 or 0)
@@ -1281,9 +1557,15 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
   end
 end)
 
+local actAcc = 0
 f:SetScript("OnUpdate", function(_, el)
   if not DB then return end
   DB.play = DB.play + el
+  actAcc = actAcc + el
+  if actAcc >= 1 then
+    if actAcc <= 5 then sampleActivity(actAcc) end  -- lange pauser (loadskaerm) taeller ikke
+    actAcc = 0
+  end
   acc = acc + el
   if acc >= 5 then acc = 0; refresh() end
 end)
@@ -1293,5 +1575,7 @@ SLASH_LEVELETA1 = "/leveleta"
 SLASH_LEVELETA2 = "/lp"
 SlashCmdList.LEVELETA = function(msg)
   msg = (msg or ""):lower()
-  if msg == "vis" or msg == "show" then toggleWindow() else toggleSettings() end
+  if msg == "vis" or msg == "show" then toggleWindow()
+  elseif msg == "goal" or msg == "mål" or msg == "maal" then toggleGoal()
+  else toggleSettings() end
 end

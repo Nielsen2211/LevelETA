@@ -24,6 +24,10 @@ Turn on **Show level times** in the settings to see how long each of your last l
 
 Turn on **Show XP bar** in the settings for an XP bar in the same style. It shows your XP, completed quests you have not turned in (gold) and your rested XP (light blue), with XP per hour, time to next level, ready quest XP and rested XP in percent below the bar. Active XP buffs (food and the Cozy Sleeping Bag) are shown with the time they have left. Hover the bar for kills and quests to level and stats for this session. You can also hide Blizzard's own XP bar. It is off by default.
 
+Next to the XP bar is a small **activity bar**. It shows how much of the last 10 minutes you were active (fighting, earning XP or turning in quests). Hover it to see how your time on this level and this session splits into fighting and questing, travelling, flying, town, AFK and dead.
+
+Click the activity bar (or type `/lp goal`) to set a **goal**, for example level 60 before Monday 05:00. A white line on the activity bar then shows how active you need to be to make it, based on your pace and your play schedule. The bar turns green when you are above the line and red when you are below. The tooltip shows when you will reach the goal at your current pace and how far ahead or behind you are.
+
 When you have an XP buff, it is also shown in the window under the three rows.
 
 ---
@@ -75,6 +79,8 @@ Right click the minimap button, or type `/lp`.
 | **Show level times** | Show how long each of your last levels took (off by default) |
 | **Levels in the list** | How many levels the level times list shows (3 to 30, default 10) |
 | **Show XP bar / Hide Blizzard's XP bar / Bar size** | The optional XP bar (off by default) |
+| **Show activity bar** | The small activity bar next to the XP bar |
+| **Goal** | Target level and deadline for the activity bar |
 | **Quest buffer** | How much of your ready quest XP to ignore (default 25 %) |
 | **Rested XP while logged out** | Count rested XP gained while logged out in an inn |
 | **Language** | English or Danish |
@@ -84,6 +90,7 @@ Right click the minimap button, or type `/lp`.
 
 - `/lp` or `/leveleta`: open settings
 - `/lp show`: show or hide the window
+- `/lp goal`: set a goal
 
 Left click the minimap button to show or hide the window.
 
@@ -93,7 +100,7 @@ Left click the minimap button to show or hide the window.
 
 LevelETA viser, hvilket level du er på, når du stopper med at spille i dag, hvornår du rammer dit næste tiende level, og hvornår du rammer level 60.
 
-Den virker helt alene og bruger `/played` og sine egne målinger. Er ForeverXP Bar installeret, bruger den også dens levelhistorik, så den er præcis fra første dag. Indstillinger: højreklik på minimap-knappen eller skriv `/lp`. Sproget kan skiftes til dansk i indstillingerne. Under Visning kan du slå level-tider til og se, hvor lang tid dine sidste levels tog. Du vælger selv, hvor mange levels listen viser. Under XP-bar kan du slå en XP-bar til i samme stil og skjule Blizzards egen.
+Den virker helt alene og bruger `/played` og sine egne målinger. Er ForeverXP Bar installeret, bruger den også dens levelhistorik, så den er præcis fra første dag. Indstillinger: højreklik på minimap-knappen eller skriv `/lp`. Sproget kan skiftes til dansk i indstillingerne. Under Visning kan du slå level-tider til og se, hvor lang tid dine sidste levels tog. Du vælger selv, hvor mange levels listen viser. Under XP-bar kan du slå en XP-bar til i samme stil og skjule Blizzards egen. Ved siden af baren viser en lille bjælke, hvor aktiv du er. Klik på den for at sætte et mål, så viser en hvid streg, hvor aktiv du skal være for at nå det.
 
 ---
 
