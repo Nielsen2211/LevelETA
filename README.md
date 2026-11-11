@@ -2,6 +2,8 @@
 
 **When will I hit my next level milestone, and level 60?**
 
+![LevelETA window](screenshots/window.png)
+
 LevelETA is a small, clean window for World of Warcraft: Forever that answers three questions while you level:
 
 | Row | What it tells you |
@@ -48,6 +50,8 @@ The part that is an estimate: **how fast you earn XP**.
 ## Settings
 
 Right click the minimap button, or type `/lp`.
+
+![LevelETA settings](screenshots/settings.png)
 
 | Setting | What it does |
 |---|---|

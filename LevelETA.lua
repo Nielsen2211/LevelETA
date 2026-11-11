@@ -613,7 +613,10 @@ infoLine:SetPoint("TOPLEFT", 18, -290); infoLine:SetPoint("TOPRIGHT", -18, -290)
 infoLine:SetColorTexture(1, 1, 1, 0.06)
 local infoText = fs(S, F_SEMI, 11); infoText:SetPoint("TOPLEFT", 18, -302); infoText:SetTextColor(0.55, 0.58, 0.64)
 label(infoText, "standalone")
-local fxbText = fs(S, F_SEMI, 11); fxbText:SetPoint("TOPLEFT", 18, -320)
+local fxbDot = S:CreateTexture(nil, "ARTWORK")
+fxbDot:SetSize(7, 7); fxbDot:SetPoint("TOPLEFT", 19, -322); fxbDot:SetTexture("Interface\\Buttons\\WHITE8x8")
+if fxbDot.SetMask then fxbDot:SetMask("Interface\\CharacterFrame\\TempPortraitAlphaMask") end
+local fxbText = fs(S, F_SEMI, 11); fxbText:SetPoint("TOPLEFT", 32, -320)
 
 -- knapper i bunden
 local langBtn = pill("", 150); langBtn:SetPoint("BOTTOMLEFT", 18, 16); label(langBtn.text, "language")
@@ -631,8 +634,11 @@ doneBtn:SetScript("OnClick", function() S:Hide() end)
 
 S:SetScript("OnShow", function()
   updateLabels()
-  if fxbRecord() then fxbText:SetText("|cff5cff7a●|r  " .. T("fxbFound")); fxbText:SetTextColor(0.85, 0.87, 0.92)
-  else fxbText:SetText("|cff8a8f99●|r  " .. T("fxbMissing")); fxbText:SetTextColor(0.55, 0.58, 0.64) end
+  if fxbRecord() then
+    fxbDot:SetVertexColor(0.36, 1, 0.48); fxbText:SetText(T("fxbFound")); fxbText:SetTextColor(0.85, 0.87, 0.92)
+  else
+    fxbDot:SetVertexColor(0.54, 0.56, 0.6); fxbText:SetText(T("fxbMissing")); fxbText:SetTextColor(0.55, 0.58, 0.64)
+  end
   for _, c in ipairs(controls) do c.load() end
 end)
 
