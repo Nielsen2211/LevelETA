@@ -44,6 +44,7 @@ The part that is exact:
 - The XP you still need, taken from the game and the official Forever XP table (2,642,800 XP from level 43 to 60, for example).
 - XP from completed quests you have not turned in yet (minus a buffer you choose, because you do not always turn them all in).
 - Your rested XP, plus the rested XP you will gain while logged out in an inn.
+- XP buffs for the time they have left: food buffs (+5% XP from kills, lost when you die) and the Cozy Sleeping Bag (+1% XP per stack, up to 3%). Rested XP from a Camp Tent at a campfire counts like any other rested XP.
 
 The part that is an estimate: **how fast you earn XP**.
 - LevelETA looks at how long your last 12 levels took. Recent levels count the most, and odd levels (long AFK, boosts) are ignored.

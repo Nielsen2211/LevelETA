@@ -37,6 +37,7 @@ local LOC = {
     fxbFound = "ForeverXP Bar: found, its level history is used", fxbMissing = "ForeverXP Bar: not installed, using LevelETA's own data",
     showTimes = "Show level times", timesHead = "Level times", now = "now", noTimes = "No level times yet",
     avg = "Average per level", hm = "%dh %02dm", timesCount = "Levels in the list",
+    foodTip = "Food buff, +5% XP from kills", bagTip = "Sleeping bag, +%d%% XP",
   },
   da = {
     level = "Level", today = "I dag kl. %s", tomorrow = "I morgen kl. %s",
@@ -54,6 +55,7 @@ local LOC = {
     fxbFound = "ForeverXP Bar: fundet, dens levelhistorik bruges", fxbMissing = "ForeverXP Bar: ikke installeret, bruger LevelETA's egne data",
     showTimes = "Vis level-tider", timesHead = "Level-tider", now = "nu", noTimes = "Ingen level-tider endnu",
     avg = "Snit pr. level", hm = "%dt %02dm", timesCount = "Levels på listen",
+    foodTip = "Food buff, +5% XP fra kills", bagTip = "Sovepose, +%d%% XP",
   },
 }
 local function T(k) return (LOC[(DB and DB.lang) or "en"] or LOC.en)[k] end
@@ -156,7 +158,87 @@ local function questXP()
 end
 
 local function restedXP() return (GetXPExhaustion and GetXPExhaustion()) or 0 end
-local function headStart() return questXP() * (100 - DB.questBuffer) / 100 + restedXP() end
+
+-- ---------- XP-buffs ----------
+-- Food (Well Fed): +5 % XP fra kills (ikke quests) saa laenge buffen varer, normalt 15 min.
+--   Forsvinder naar man doer.
+-- Cozy Sleeping Bag (Well-Rested): +1 % al XP pr. stak, op til 3 stakke. Overlever doed.
+-- Camp Tent ved et campfire fylder rested XP op til 5 % af et level. Det er almindelig
+--   rested XP, saa det er allerede med via GetXPExhaustion.
+-- Tiden der er tilbage laeses fra selve buffen, saa talenter der forlaenger den regnes med.
+local FOOD_BONUS = 0.05
+local BAG_ID = 429959
+local buffs, buffsDirty = {}, true
+local lastQuestAt = -100
+
+local function clock() return (GetTime and GetTime()) or 0 end
+local function num(v)  -- i kamp kan spillet skjule vaerdier
+  if type(v) ~= "number" then return nil end
+  if issecretvalue then
+    local ok, secret = pcall(issecretvalue, v)
+    if not ok or secret then return nil end
+  end
+  return v
+end
+
+local function scanBuffs()
+  if InCombatLockdown and InCombatLockdown() then return end  -- buffs kan kun laeses uden for kamp
+  local fed, bag, stacks
+  local ok = pcall(function()
+    for i = 1, 80 do
+      local name, id, exp, count
+      if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
+        local a = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
+        if not a then break end
+        name, id, exp, count = a.name, a.spellId, a.expirationTime, a.applications
+      elseif UnitBuff then
+        local n, _, c, _, _, e, _, _, _, sid = UnitBuff("player", i)
+        if not n then break end
+        name, id, exp, count = n, sid, e, c
+      else
+        break
+      end
+      exp = num(exp)
+      if exp and exp > 0 then
+        local n = type(name) == "string" and name:lower() or ""
+        if n:find("well fed", 1, true) then
+          fed = math.max(fed or 0, exp)
+        elseif num(id) == BAG_ID or n:find("well-rested", 1, true) or n:find("well rested", 1, true) then
+          bag, stacks = exp, num(count)
+        end
+      end
+    end
+  end)
+  if not ok then return end
+  buffs.fedUntil, buffs.bagUntil = fed, bag
+  buffs.bagStacks = bag and math.max(1, math.min(3, (stacks and stacks > 0) and stacks or 1)) or nil
+  buffsDirty = false
+end
+
+local function fedLeft() local t = buffs.fedUntil and (buffs.fedUntil - clock()) or 0; return t > 0 and t or 0 end
+local function bagLeft() local t = buffs.bagUntil and (buffs.bagUntil - clock()) or 0; return t > 0 and t or 0 end
+
+-- hvor stor en del af din XP kommer fra kills (resten er quests). Maales paa de sidste timer.
+local function killShare()
+  local k, t = 0, 0
+  for _, x in ipairs(DB.samples) do
+    local c = x.xp - (x.b or 0) - (x.e or 0)
+    t = t + c
+    if not x.q then k = k + c end
+  end
+  if t < 5000 then return 0.6 end  -- for lidt data endnu: antag 60 % fra kills
+  return math.max(0, math.min(1, k / t))
+end
+
+-- ekstra XP du faar fra dine buffs i den tid, de har tilbage
+local function buffXP(r)
+  if not r or r <= 0 then return 0 end
+  local x = fedLeft() * r * killShare() * FOOD_BONUS
+  x = x + bagLeft() * r * (buffs.bagStacks or 0) / 100
+  return x
+end
+
+local function headStart(r) return questXP() * (100 - DB.questBuffer) / 100 + restedXP() + buffXP(r) end
 
 -- ---------- historik ----------
 local INFO = {}
@@ -251,7 +333,7 @@ local function rate()  -- XP pr. sekund paa dit nuvaerende level, og om det er e
   for i = #DB.samples, 1, -1 do
     local x = DB.samples[i]
     if x.p < winStart then break end
-    gained = gained + x.xp - (x.b or 0)  -- rested-bonus taeller ikke som tempo
+    gained = gained + x.xp - (x.b or 0) - (x.e or 0)  -- rested- og buff-bonus taeller ikke som tempo
   end
   if span >= 600 and gained > 0 then liveR, liveSpan = gained / span, span end
 
@@ -573,7 +655,7 @@ local function mainRows(y)
 
   local r = shortRate()
   local rL = longRate()
-  local head = headStart()
+  local head = headStart(r)
   local list = {}
 
   -- level ved sengetid, med bjaelke for hvor langt inde i levelet
@@ -605,6 +687,7 @@ end
 
 local function refresh()
   if not DB then return end
+  if buffsDirty then scanBuffs() end
   f:SetScale(DB.scale)
   updateLabels()
   for _, c in ipairs(rows) do c:Hide() end
@@ -800,8 +883,13 @@ mmb:SetScript("OnEnter", function(self)
   GameTooltip:SetOwner(self, "ANCHOR_LEFT")
   GameTooltip:AddLine(NAME, 1, 0.82, 0.3)
   if UnitLevel("player") < MAXLVL then
-    local rL, head = longRate(), headStart()
+    local rL = longRate()
+    local head = headStart(rL)
     GameTooltip:AddDoubleLine(T("level") .. " 60", nice(eta(timeTo(MAXLVL, rL, head), rL), 30), 0.85, 0.85, 0.85, 1, 0.82, 0)
+  end
+  if fedLeft() > 0 then GameTooltip:AddDoubleLine(T("foodTip"), dur(fedLeft()), 0.85, 0.85, 0.85, 0.62, 0.82, 1) end
+  if bagLeft() > 0 then
+    GameTooltip:AddDoubleLine(string.format(T("bagTip"), buffs.bagStacks or 1), dur(bagLeft()), 0.85, 0.85, 0.85, 0.62, 0.82, 1)
   end
   GameTooltip:AddLine(" ")
   GameTooltip:AddLine(T("tipLeft"), 0.6, 0.6, 0.6)
@@ -836,6 +924,10 @@ f:RegisterEvent("PLAYER_LEVEL_UP")
 f:RegisterEvent("QUEST_LOG_UPDATE")
 f:RegisterEvent("UPDATE_EXHAUSTION")
 f:RegisterEvent("TIME_PLAYED_MSG")
+f:RegisterEvent("UNIT_AURA")
+f:RegisterEvent("PLAYER_REGEN_ENABLED")
+f:RegisterEvent("PLAYER_DEAD")
+f:RegisterEvent("QUEST_TURNED_IN")
 f:SetScript("OnEvent", function(self, event, a1, a2)
   if event == "ADDON_LOADED" and a1 == ADDON then
     LevelETADB = LevelETADB or {}
@@ -865,6 +957,15 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
     if C_Timer and C_Timer.After then C_Timer.After(2, requestPlayed) end
   elseif event == "QUEST_LOG_UPDATE" then
     questDirty = true
+  elseif event == "UNIT_AURA" then
+    if a1 == "player" then buffsDirty = true end
+  elseif event == "PLAYER_REGEN_ENABLED" then
+    buffsDirty = true
+  elseif event == "PLAYER_DEAD" then
+    buffs.fedUntil = nil  -- food buff forsvinder ved doed, soveposen bliver
+    buffsDirty = true
+  elseif event == "QUEST_TURNED_IN" then
+    lastQuestAt = clock()
   elseif event == "UPDATE_EXHAUSTION" then
     local ex = restedXP()
     if lastEx and ex > lastEx then lastEx = ex end  -- rested steg (inn), ikke bonus
@@ -880,7 +981,13 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
     end
     local ex = restedXP()
     local bonus = math.max(0, math.min(gain, (lastEx or ex) - ex))  -- brugt rested = bonus-XP
-    if gain > 0 then DB.samples[#DB.samples + 1] = {p = DB.play, xp = gain, b = bonus} end
+    if gain > 0 then
+      -- quest-XP eller kill-XP, og hvor meget af det dine buffs gav (taeller ikke som tempo)
+      local q = clock() - lastQuestAt < 2
+      local mult = 1 + ((not q and fedLeft() > 0) and FOOD_BONUS or 0) + ((bagLeft() > 0) and (buffs.bagStacks or 0) / 100 or 0)
+      local extra = (gain - bonus) * (1 - 1 / mult)
+      DB.samples[#DB.samples + 1] = {p = DB.play, xp = gain, b = bonus, e = extra > 0 and extra or nil, q = q or nil}
+    end
     local cut = DB.play - WINDOW * 2
     while DB.samples[1] and DB.samples[1].p < cut do table.remove(DB.samples, 1) end
     lastXP, lastMax, lastLevel, lastEx = xp, mx, lvl, ex

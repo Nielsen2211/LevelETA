@@ -3,7 +3,7 @@
 ## Notes: Shows when you hit your next ten levels and level 60, and your level at bedtime. Uses ForeverXP Bar data when installed.
 ## Notes-daDK: Viser hvornår du rammer dit næste tiende level og level 60, og dit level ved sengetid.
 ## Author: Rasmus
-## Version: 6.7
+## Version: 6.8
 ## IconTexture: Interface\AddOns\LevelETA\Textures\Logo
 ## OptionalDeps: ForeverXPbar
 ## SavedVariablesPerCharacter: LevelETADB
