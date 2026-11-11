@@ -16,7 +16,7 @@ Times are shown as real dates: *Tomorrow at 07:00*, *Friday at 18:30*, *Nov 21 a
 
 ### Level times (optional)
 
-Turn on **Show level times** in the settings to see how long each of your last 10 levels took. The level you are on now is shown in blue and counts up while you play, and your average per level is shown at the bottom. It is off by default.
+Turn on **Show level times** in the settings to see how long each of your last 10 levels took. The level you are on now is shown larger, in blue, and counts up while you play, and your average per level is shown at the bottom. It is off by default.
 
 ![LevelETA level times](screenshots/level-times.png)
 

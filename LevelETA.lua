@@ -462,7 +462,7 @@ end
 
 -- ---------- level-tider (valgfri liste) ----------
 local SHOWN = 10                  -- antal faerdige levels i listen
-local TX, TR = 84, 58             -- bjaelken starter efter label og slutter foer tiden
+local TX, TR = 84, 68             -- bjaelken starter efter label og slutter foer tiden
 local TW = W - 28 - TX - TR
 
 local function dur(sec)
@@ -505,19 +505,25 @@ local function hideTimes()
   for _, c in ipairs(tRows) do c:Hide() end
 end
 
+-- det level du er paa nu vises stoerre, de faerdige levels i lille skrift
 local function placeTime(i, y, title, value, frac, now)
   local c = timeRow(i)
-  c.title:SetText(title); c.value:SetText(value or "")
+  local h, bh = 17, 4
   if now then
+    h, bh = 30, 6
+    c.title:SetFont(F_BOLD, 14); c.value:SetFont(F_BOLD, 16)
     c.title:SetTextColor(0.62, 0.82, 1); c.value:SetTextColor(0.62, 0.82, 1); c.fill:SetColorTexture(0.62, 0.82, 1, 0.9)
   else
+    c.title:SetFont(F_SEMI, 11); c.value:SetFont(F_BOLD, 12)
     c.title:SetTextColor(0.55, 0.58, 0.64); c.value:SetTextColor(0.91, 0.92, 0.94); c.fill:SetColorTexture(0.62, 0.82, 1, 0.35)
   end
+  c.title:SetText(title); c.value:SetText(value or "")
+  c:SetHeight(h); c.track:SetHeight(bh); c.fill:SetHeight(bh)
   local bar = type(frac) == "number"
   c.track:SetShown(bar); c.fill:SetShown(bar)
   if bar then c.fill:SetWidth(math.max(1, TW * math.min(1, frac))) end
   c:ClearAllPoints(); c:SetPoint("TOPLEFT", 14, y); c:SetPoint("TOPRIGHT", -14, y); c:Show()
-  return y - 17
+  return y - h
 end
 
 local function drawTimes(y)
@@ -551,9 +557,7 @@ local function drawTimes(y)
   local mx = 0
   for _, x in ipairs(list) do mx = math.max(mx, x.d) end
   for i, x in ipairs(list) do
-    local title = T("level") .. " " .. x.L
-    if x.now then title = title .. "  |cff5c6270" .. T("now") .. "|r" end
-    y = placeTime(i, y, title, dur(x.d), x.d / mx, x.now)
+    y = placeTime(i, y, T("level") .. " " .. x.L, dur(x.d), x.d / mx, x.now)
   end
   if n >= 2 then
     y = y - 4
