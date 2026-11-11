@@ -4,7 +4,8 @@
 
 - **When you hit your next tenth level and level 60**, as real dates like *Friday 18:30*
 - **What level you will be when you stop playing today**
-- **Optional:** your level times, an XP bar, and an activity bar with a goal
+- **An XP bar and XP tracker** (optional): XP per hour, time to next level, quest XP, rested XP and XP buffs
+- **Optional extras:** your level times and an activity bar with a goal
 
 It learns how fast you level and knows when you play. Works on its own, and uses ForeverXP Bar data if you have it.
 
@@ -30,9 +31,9 @@ Turn on **Show level times** in the settings to see how long each of your last l
 
 ![LevelETA level times](screenshots/level-times.png)
 
-### XP bar (optional)
+### XP bar and XP tracker (optional)
 
-Turn on **Show XP bar** in the settings for an XP bar in the same style. It shows your XP, completed quests you have not turned in (gold) and your rested XP (light blue), with XP per hour, time to next level, ready quest XP and rested XP in percent below the bar. Active XP buffs (food and the Cozy Sleeping Bag) are shown with the time they have left. Hover the bar for kills and quests to level and stats for this session. You can also hide Blizzard's own XP bar. It is off by default.
+Turn on **Show XP bar** in the settings for an XP bar and XP tracker in the same style. It shows your XP, completed quests you have not turned in (gold) and your rested XP (light blue), with XP per hour, time to next level, ready quest XP and rested XP in percent below the bar. Active XP buffs (food and the Cozy Sleeping Bag) are shown with the time they have left. Hover the bar for kills and quests to level and stats for this session. You can also hide Blizzard's own XP bar. It is off by default.
 
 Next to the XP bar is a small **activity bar**. It shows how much of the last 10 minutes you were active (fighting, earning XP or turning in quests). Hover it to see how your time on this level and this session splits into fighting and questing, travelling, flying, town, AFK and dead.
 
