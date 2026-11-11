@@ -662,7 +662,7 @@ end
 
 -- ---------- aktive XP-buffs som smaa "chips": ikon, procent, tid tilbage ----------
 local FOOD_ICON = "Interface\\Icons\\Spell_Misc_Food"
-local BAG_ICON = "Interface\\Icons\\Spell_Nature_Sleep"
+local BAG_ICON = "Interface\\Icons\\INV_Drink_15"
 
 local function activeBuffs()
   local list = {}
