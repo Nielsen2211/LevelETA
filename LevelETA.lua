@@ -36,7 +36,7 @@ local LOC = {
     standalone = "Works on its own. Uses ForeverXP Bar data too, when it is installed.",
     fxbFound = "ForeverXP Bar: found, its level history is used", fxbMissing = "ForeverXP Bar: not installed, using LevelETA's own data",
     showTimes = "Show level times", timesHead = "Level times", now = "now", noTimes = "No level times yet",
-    avg = "Average per level", hm = "%dh %02dm",
+    avg = "Average per level", hm = "%dh %02dm", timesCount = "Levels in the list",
   },
   da = {
     level = "Level", today = "I dag kl. %s", tomorrow = "I morgen kl. %s",
@@ -53,7 +53,7 @@ local LOC = {
     standalone = "Virker helt alene. Bruger også data fra ForeverXP Bar, hvis den er installeret.",
     fxbFound = "ForeverXP Bar: fundet, dens levelhistorik bruges", fxbMissing = "ForeverXP Bar: ikke installeret, bruger LevelETA's egne data",
     showTimes = "Vis level-tider", timesHead = "Level-tider", now = "nu", noTimes = "Ingen level-tider endnu",
-    avg = "Snit pr. level", hm = "%dt %02dm",
+    avg = "Snit pr. level", hm = "%dt %02dm", timesCount = "Levels på listen",
   },
 }
 local function T(k) return (LOC[(DB and DB.lang) or "en"] or LOC.en)[k] end
@@ -65,7 +65,7 @@ local defaults = {
   play = 0, samples = {}, times = {}, ptimes = {}, fxbTimes = {},
   schedule = true, sleepStart = 23 * 60, sleepEnd = 7 * 60, breakStart = 12 * 60, breakLen = 0,
   questBuffer = 25, inn = true, scale = 1, lang = "en", locked = false, hidden = false, mmAngle = 200,
-  showTimes = false,
+  showTimes = false, timesCount = 10,
 }
 
 -- ---------- tid og datoer ----------
@@ -461,7 +461,6 @@ local function setRow(c, y, title, value, progress, last)
 end
 
 -- ---------- level-tider (valgfri liste) ----------
-local SHOWN = 10                  -- antal faerdige levels i listen
 local TX, TR = 84, 68             -- bjaelken starter efter label og slutter foer tiden
 local TW = W - 28 - TX - TR
 
@@ -546,7 +545,7 @@ local function drawTimes(y)
     local x = hist[i]
     if x.L < lvl then
       list[#list + 1] = x; sum = sum + x.d; n = n + 1
-      if n >= SHOWN then break end
+      if n >= DB.timesCount then break end
     end
   end
 
@@ -617,7 +616,7 @@ end
 -- ---------- indstillinger ----------
 local SW, COL = 520, 260
 local S = CreateFrame("Frame", "LevelETASettings", UIParent)
-S:SetSize(SW, 428); S:SetPoint("CENTER"); S:SetFrameStrata("DIALOG"); S:Hide()
+S:SetSize(SW, 506); S:SetPoint("CENTER"); S:SetFrameStrata("DIALOG"); S:Hide()
 skin(S, "Wide", 1040, 2048)
 movable(S, function() return true end)
 S:SetScript("OnDragStop", S.StopMovingOrSizing)
@@ -713,25 +712,28 @@ slider(-242, "breakLen", 0, 180, 15, function() return DB.breakLen end, function
 colX = COL
 section(-50, "display")
 toggle(-72, "showWin", function() return not DB.hidden end, function(v) DB.hidden = not v; f:SetShown(v) end)
-toggle(-100, "showTimes", function() return DB.showTimes end, function(v) DB.showTimes = v end)
-toggle(-128, "lock", function() return DB.locked end, function(v) DB.locked = v end)
-slider(-160, "size", 0.6, 2.0, 0.05, function() return DB.scale end, function(v) DB.scale = v end,
+toggle(-100, "lock", function() return DB.locked end, function(v) DB.locked = v end)
+slider(-132, "size", 0.6, 2.0, 0.05, function() return DB.scale end, function(v) DB.scale = v end,
   function(v) return string.format("%d%%", math.floor(v * 100 + 0.5)) end)
-section(-212, "questSec")
-slider(-236, "qBuf", 0, 100, 5, function() return DB.questBuffer end, function(v) DB.questBuffer = v end,
+section(-184, "timesHead")
+toggle(-206, "showTimes", function() return DB.showTimes end, function(v) DB.showTimes = v end)
+slider(-238, "timesCount", 3, 30, 1, function() return DB.timesCount end, function(v) DB.timesCount = v end,
+  function(v) return tostring(v) end)
+section(-290, "questSec")
+slider(-314, "qBuf", 0, 100, 5, function() return DB.questBuffer end, function(v) DB.questBuffer = v end,
   function(v) return string.format("-%d%%", v) end)
-toggle(-282, "inn", function() return DB.inn end, function(v) DB.inn = v end)
+toggle(-360, "inn", function() return DB.inn end, function(v) DB.inn = v end)
 
 -- info: virker alene og sammen med ForeverXP Bar
 local infoLine = S:CreateTexture(nil, "ARTWORK")
-infoLine:SetPoint("TOPLEFT", 18, -318); infoLine:SetPoint("TOPRIGHT", -18, -318); infoLine:SetHeight(1)
+infoLine:SetPoint("TOPLEFT", 18, -396); infoLine:SetPoint("TOPRIGHT", -18, -396); infoLine:SetHeight(1)
 infoLine:SetColorTexture(1, 1, 1, 0.06)
-local infoText = fs(S, F_SEMI, 11); infoText:SetPoint("TOPLEFT", 18, -330); infoText:SetTextColor(0.55, 0.58, 0.64)
+local infoText = fs(S, F_SEMI, 11); infoText:SetPoint("TOPLEFT", 18, -408); infoText:SetTextColor(0.55, 0.58, 0.64)
 label(infoText, "standalone")
 local fxbDot = S:CreateTexture(nil, "ARTWORK")
-fxbDot:SetSize(7, 7); fxbDot:SetPoint("TOPLEFT", 19, -350); fxbDot:SetTexture("Interface\\Buttons\\WHITE8x8")
+fxbDot:SetSize(7, 7); fxbDot:SetPoint("TOPLEFT", 19, -428); fxbDot:SetTexture("Interface\\Buttons\\WHITE8x8")
 if fxbDot.SetMask then fxbDot:SetMask("Interface\\CharacterFrame\\TempPortraitAlphaMask") end
-local fxbText = fs(S, F_SEMI, 11); fxbText:SetPoint("TOPLEFT", 32, -348)
+local fxbText = fs(S, F_SEMI, 11); fxbText:SetPoint("TOPLEFT", 32, -426)
 
 -- knapper i bunden
 local langBtn = pill("", 150); langBtn:SetPoint("BOTTOMLEFT", 18, 16); label(langBtn.text, "language")
