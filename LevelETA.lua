@@ -1,0 +1,781 @@
+-- LevelETA: viser hvornaar du rammer dit naeste tiende level og level 60,
+-- og hvilket level du er paa ved sengetid. Virker fra level 1 til 60.
+local ADDON = "LevelETA"
+local NAME = "LevelETA"
+local MAXLVL = 60
+local PATH = "Interface\\AddOns\\LevelETA\\"
+local TEX = PATH .. "Textures\\"
+local LOGO = TEX .. "Logo"
+local F_SEMI = PATH .. "Fonts\\Inter-SemiBold.ttf"
+local F_BOLD = PATH .. "Fonts\\Inter-Bold.ttf"
+
+-- XP til naeste level i WoW Forever (samme kurve som Classic). Level 1 til 59.
+local XPT = {400,900,1400,2100,2800,3600,4500,5400,6500,7600,8800,10100,11400,12900,14400,
+  16000,17700,19400,21300,23200,25200,27300,29400,31700,34000,36400,38900,41400,44300,47400,
+  50800,54500,58600,62800,67100,71600,76100,80800,85700,90700,95800,101000,106300,111800,117500,
+  123200,129100,135100,141200,147500,153900,160400,167100,173900,180800,187900,195000,202300,209800}
+
+local WINDOW = 7200  -- dit tempo lige nu maales over de sidste 2 timers spilletid
+local GROWTH = 0.75  -- hvor meget XP pr. time vokser med level (backtestet paa rigtige data)
+local DB
+
+-- ---------- sprog ----------
+local LOC = {
+  en = {
+    level = "Level", today = "Today at %s", tomorrow = "Tomorrow at %s",
+    daysFull = {"Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"},
+    months = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"},
+    todayW = "Today", tomorrowW = "Tomorrow", at = "%s %02d:%02d",
+    done = "Level 60. Well done!", settings = "Settings",
+    rhythm = "Play time", useRhythm = "Use my play times", bed = "Play until", wake = "Play from",
+    breakAt = "Break starts", breakLen = "Break length", none = "none", min = "min",
+    display = "Display", showWin = "Show window", lock = "Lock window", size = "Size",
+    questSec = "Quests and rested", qBuf = "Quest buffer", inn = "Rested XP while logged out",
+    reset = "Reset pace", close = "Done", language = "Language: English",
+    tipLeft = "Left click: show or hide", tipRight = "Right click: settings", nextLvl = "Next level",
+    standalone = "Works on its own. Uses ForeverXP Bar data too, when it is installed.",
+    fxbFound = "ForeverXP Bar: found, its level history is used", fxbMissing = "ForeverXP Bar: not installed, using LevelETA's own data",
+  },
+  da = {
+    level = "Level", today = "I dag kl. %s", tomorrow = "I morgen kl. %s",
+    daysFull = {"Søndag","Mandag","Tirsdag","Onsdag","Torsdag","Fredag","Lørdag"},
+    months = {"jan","feb","mar","apr","maj","jun","jul","aug","sep","okt","nov","dec"},
+    todayW = "I dag", tomorrowW = "I morgen", at = "%s kl. %02d:%02d",
+    done = "Level 60. Godt gået!", settings = "Indstillinger",
+    rhythm = "Spilletid", useRhythm = "Brug mine spilletider", bed = "Spiller til", wake = "Spiller fra",
+    breakAt = "Pause starter", breakLen = "Pausens længde", none = "ingen", min = "min",
+    display = "Visning", showWin = "Vis vinduet", lock = "Lås vinduet", size = "Størrelse",
+    questSec = "Quests og rested", qBuf = "Quest-buffer", inn = "Rested XP når jeg er logget ud",
+    reset = "Nulstil tempo", close = "Færdig", language = "Sprog: Dansk",
+    tipLeft = "Venstreklik: vis eller skjul", tipRight = "Højreklik: indstillinger", nextLvl = "Næste level",
+    standalone = "Virker helt alene. Bruger også data fra ForeverXP Bar, hvis den er installeret.",
+    fxbFound = "ForeverXP Bar: fundet, dens levelhistorik bruges", fxbMissing = "ForeverXP Bar: ikke installeret, bruger LevelETA's egne data",
+  },
+}
+local function T(k) return (LOC[(DB and DB.lang) or "en"] or LOC.en)[k] end
+local labels = {}  -- tekster der skal skifte sprog
+local function label(f, key) labels[#labels + 1] = {f, key}; f:SetText(T(key)) end
+local function updateLabels() for _, x in ipairs(labels) do x[1]:SetText(T(x[2])) end end
+
+local defaults = {
+  play = 0, samples = {}, times = {}, ptimes = {}, fxbTimes = {},
+  schedule = true, sleepStart = 23 * 60, sleepEnd = 7 * 60, breakStart = 12 * 60, breakLen = 0,
+  questBuffer = 25, inn = true, scale = 1, lang = "en", locked = false, hidden = false, mmAngle = 200,
+}
+
+-- ---------- tid og datoer ----------
+local function hhmm(m) return string.format("%02d:%02d", math.floor(m / 60) % 24, m % 60) end
+
+local function midnight(t)
+  local d = date("*t", math.floor(t)); d.hour, d.min, d.sec = 0, 0, 0
+  return time(d)
+end
+
+-- naturlig dato: "I morgen kl. 07:04", "Mandag kl. 18:30", "21. nov kl. 16:15"
+local function nice(t, roundMin)
+  if roundMin then
+    local step = roundMin * 60
+    t = math.floor((t + step / 2) / step) * step
+  end
+  t = math.floor(t)
+  local d = date("*t", t)
+  local diff = math.floor((midnight(t) - midnight(time())) / 86400 + 0.5)
+  local day
+  if diff <= 0 then day = T("todayW")
+  elseif diff == 1 then day = T("tomorrowW")
+  elseif diff < 7 then day = T("daysFull")[d.wday]
+  elseif DB.lang == "da" then day = string.format("%d. %s", d.day, T("months")[d.month])
+  else day = string.format("%s %d", T("months")[d.month], d.day) end
+  return string.format(T("at"), day, d.hour, d.min)
+end
+
+-- ---------- XP ----------
+local function mobxp(l) return (45 + 5 * l) ^ GROWTH end
+
+local function scale(level)  -- hvis spillet skulle afvige fra tabellen
+  local tbl, mx = XPT[level], UnitXPMax("player")
+  if tbl and mx and mx > 0 then return mx / tbl end
+  return 1
+end
+
+-- spilletid (sek) til et level. head = XP du allerede har i haanden (quests og rested)
+local function timeTo(target, r, head)
+  local lvl = UnitLevel("player")
+  if lvl >= target then return 0 end
+  local s, k0, h, t = scale(lvl), mobxp(lvl), head or 0, 0
+  for l = lvl, target - 1 do
+    local need = (l == lvl) and (UnitXPMax("player") - UnitXP("player")) or (XPT[l] or 0) * s
+    local take = math.min(h, need)
+    need, h = need - take, h - take
+    t = t + need / (r * mobxp(l) / k0)
+  end
+  return t
+end
+
+-- hvilket level (med decimaler) du er paa efter sec sekunders spil
+local function levelAfter(sec, r, head)
+  local lvl = UnitLevel("player")
+  local s, k0, h = scale(lvl), mobxp(lvl), head or 0
+  for l = lvl, MAXLVL - 1 do
+    local size = (l == lvl) and UnitXPMax("player") or (XPT[l] or 0) * s
+    local base = (l == lvl) and UnitXP("player") or 0
+    local take = math.min(h, size - base)
+    base, h = base + take, h - take
+    local rl = r * mobxp(l) / k0
+    local tl = (size - base) / rl
+    if sec < tl then return l + (base + sec * rl) / size end
+    sec = sec - tl
+  end
+  return MAXLVL
+end
+
+-- XP fra faerdige quests, der endnu ikke er afleveret
+local questCache, questDirty = 0, true
+local function questXP()
+  if not questDirty then return questCache end
+  questDirty = false
+  local ok, total = pcall(function()
+    local sum = 0
+    if C_QuestLog and C_QuestLog.GetNumQuestLogEntries and C_QuestLog.GetInfo then
+      for i = 1, C_QuestLog.GetNumQuestLogEntries() do
+        local info = C_QuestLog.GetInfo(i)
+        if info and not info.isHeader and info.questID and C_QuestLog.IsComplete and C_QuestLog.IsComplete(info.questID) then
+          sum = sum + ((GetQuestLogRewardXP and GetQuestLogRewardXP(info.questID)) or 0)
+        end
+      end
+    end
+    return sum
+  end)
+  questCache = ok and total or 0
+  return questCache
+end
+
+local function restedXP() return (GetXPExhaustion and GetXPExhaustion()) or 0 end
+local function headStart() return questXP() * (100 - DB.questBuffer) / 100 + restedXP() end
+
+-- ---------- historik ----------
+local INFO = {}
+
+local function fxbRecord()  -- ForeverXP Bar gemmer spilletid ved hvert level
+  local db = _G.ForeverXPBarDB
+  if type(db) ~= "table" or type(db.records) ~= "table" or type(db.records.chars) ~= "table" then return nil end
+  local key = (UnitName("player") or "") .. "-" .. ((GetRealmName and GetRealmName()) or "")
+  local rec = db.records.chars[key]
+  if type(rec) ~= "table" or type(rec.times) ~= "table" then return nil end
+  return rec
+end
+
+local function durations(times)  -- {L = sekunder paa level L}
+  local d = {}
+  if type(times) ~= "table" then return d end
+  for L = 1, MAXLVL - 1 do
+    local a, b = times[L], times[L + 1]
+    if type(a) == "number" and type(b) == "number" and b > a then d[L] = b - a end
+  end
+  return d
+end
+
+-- Tre kilder pr. level, i prioriteret raekkefoelge:
+--  1. /played (ptimes): spillets egen tid, helt praecis
+--  2. ForeverXP Bar (kopieres ind i fxbTimes, saa den bliver, selv hvis addonen fjernes)
+--  3. vores egen maaling ved hvert ding (times)
+-- Er to kilder enige (under 25 % forskel), bruges gennemsnittet, ellers den hoejeste prioritet.
+local function mergedHistory(rec)
+  if rec then
+    for L = 1, MAXLVL do
+      if type(rec.times[L]) == "number" then DB.fxbTimes[L] = rec.times[L] end
+    end
+  end
+  local src = {durations(DB.ptimes), durations(DB.fxbTimes), durations(DB.times)}
+  local used = {false, false, false}
+  local h = {}
+  for L = 1, MAXLVL - 1 do
+    local best, bi
+    for i = 1, 3 do
+      local v = src[i][L]
+      if v then
+        if not best then best, bi = v, i
+        elseif math.abs(best - v) / math.max(best, v) < 0.25 then best = (best + v) / 2; used[i] = true end
+      end
+    end
+    if best then h[#h + 1] = {L = L, d = best}; used[bi] = true end
+  end
+  local names = {}
+  if used[1] or used[3] then names[#names + 1] = NAME end
+  if used[2] then names[#names + 1] = "ForeverXP Bar" end
+  INFO.source = #names > 0 and table.concat(names, " + ") or nil
+  return h
+end
+
+-- Effektivitet = XP pr. sekund delt med hvad levelet giver. Naesten konstant for en spiller.
+-- De sidste 12 levels bruges, nye vejer mest (halveringstid 6 levels), og afvigere smides ud.
+local function histEfficiency(hist, lvl, s)
+  local es = {}
+  for i = math.max(1, #hist - 11), #hist do
+    local x = hist[i]
+    if x.d >= 300 and XPT[x.L] then es[#es + 1] = {L = x.L, e = XPT[x.L] * s / (x.d * mobxp(x.L))} end
+  end
+  if #es == 0 then return nil end
+  local sorted = {}
+  for i, x in ipairs(es) do sorted[i] = x.e end
+  table.sort(sorted)
+  local med = sorted[math.ceil(#sorted / 2)]
+  local sw, se = 0, 0
+  for _, x in ipairs(es) do
+    if x.e > med / 2.5 and x.e < med * 2.5 then
+      local w = 0.5 ^ ((lvl - 1 - x.L) / 6)
+      sw, se = sw + w, se + w * x.e
+    end
+  end
+  if sw == 0 then return nil end
+  return se / sw, #es
+end
+
+-- ---------- tempo ----------
+local playedLevelTime, playedAt  -- fra /played: tid paa nuvaerende level, og hvornaar vi fik den
+
+local function rate()  -- XP pr. sekund paa dit nuvaerende level, og om det er et skoen
+  local lvl = UnitLevel("player")
+  local k0, s = mobxp(lvl), scale(lvl)
+  INFO.eh, INFO.liveE = nil, nil
+
+  -- 1) dit tempo lige nu: XP og tid fra samme vindue
+  local liveR, liveSpan
+  local winStart = math.max(DB.play - WINDOW, DB.sessionStart or DB.play)
+  local span, gained = DB.play - winStart, 0
+  for i = #DB.samples, 1, -1 do
+    local x = DB.samples[i]
+    if x.p < winStart then break end
+    gained = gained + x.xp - (x.b or 0)  -- rested-bonus taeller ikke som tempo
+  end
+  if span >= 600 and gained > 0 then liveR, liveSpan = gained / span, span end
+
+  -- uden egne maalinger endnu: brug tiden paa dette level fra /played eller ForeverXP Bar
+  local rec = fxbRecord()
+  if not liveR then
+    local el
+    if playedLevelTime then el = playedLevelTime + (time() - playedAt)
+    elseif rec and type(rec.times[lvl]) == "number" and type(rec.elapsed) == "number" then el = rec.elapsed - rec.times[lvl] end
+    local cur = UnitXP("player")
+    if el and el >= 900 and cur > 0 then liveR, liveSpan = cur / el, math.min(el, 3600) end
+  end
+
+  -- 2) historik
+  local eh = histEfficiency(mergedHistory(rec), lvl, s)
+  INFO.eh = eh
+  INFO.liveE = liveR and liveR / k0 or nil
+
+  local e
+  if eh and liveR then
+    local w = math.min(0.4, liveSpan / 10800)  -- dit tempo nu vejer op til 40 % efter 3 timer
+    e = w * (liveR / k0) + (1 - w) * eh
+  elseif eh then e = eh
+  elseif liveR then e = liveR / k0
+  else
+    local minutes = 10 + lvl * 4.5  -- skoen: ca. 15 min ved level 1, ca. 4,5 timer ved level 59
+    return math.max(1, UnitXPMax("player") or 1) / (minutes * 60), true
+  end
+  return e * k0, false
+end
+
+-- kort sigt (i dag): glattet over ca. 15 min, hopper direkte hvis den er langt fra
+local lastShort
+local function shortRate()
+  local r, est = rate()
+  local lvl = UnitLevel("player")
+  if est then return r, true end
+  local e = r / mobxp(lvl)
+  local dt = math.max(0, DB.play - (lastShort or DB.play)); lastShort = DB.play
+  if not DB.eS or math.abs(e - DB.eS) / e > 0.25 then DB.eS = e
+  else DB.eS = DB.eS + (e - DB.eS) * math.min(1, dt / 900) end
+  return DB.eS * mobxp(lvl), false
+end
+
+-- lang sigt (level 50 og 60): 90 % historik, 10 % dit tempo nu, glattet over ca. 2 timer
+local lastLong
+local function longRate()
+  local r, est = shortRate()
+  if est or not INFO.eh then return r, est end
+  local lvl = UnitLevel("player")
+  local e = 0.9 * INFO.eh + 0.1 * (INFO.liveE or INFO.eh)
+  local dt = math.max(0, DB.play - (lastLong or DB.play)); lastLong = DB.play
+  if not DB.eL or math.abs(e - DB.eL) / e > 0.4 then DB.eL = e
+  else DB.eL = DB.eL + (e - DB.eL) * math.min(1, dt / 7200) end
+  return DB.eL * mobxp(lvl), false
+end
+
+-- ---------- spilletid (sleepEnd = spiller fra, sleepStart = spiller til) ----------
+local function inRange(m, a, b)
+  if a == b then return false end
+  if a < b then return m >= a and m < b end
+  return m >= a or m < b
+end
+
+local function playing(m)
+  if inRange(m, DB.sleepStart, DB.sleepEnd) then return false end
+  if DB.breakLen > 0 and inRange(m, DB.breakStart, (DB.breakStart + DB.breakLen) % 1440) then return false end
+  return true
+end
+
+local function points() return {DB.sleepStart, DB.sleepEnd, DB.breakStart, (DB.breakStart + DB.breakLen) % 1440} end
+
+-- gaa gennem kalenderen i bidder mellem sengetid, opvaagning og pause
+local function walk(t, fn)
+  local pts = points()
+  for _ = 1, 3000 do
+    local d = date("*t", math.floor(t))
+    local m = d.hour * 60 + d.min
+    local delta = 1440
+    for _, p in ipairs(pts) do
+      local x = (p - m) % 1440
+      if x > 0 and x < delta then delta = x end
+    end
+    local chunk = delta * 60 - d.sec
+    if fn(t, m, chunk) then return end
+    t = t + chunk
+  end
+end
+
+-- klokkeslaet hvor du har spillet playSec, med soevn og rested XP i en inn regnet med
+local function eta(playSec, r)
+  local t0, need = time(), math.floor(playSec)
+  if not DB.schedule then return t0 + need end
+  local mx = UnitXPMax("player") or 0
+  local restLeft = math.max(0, mx * 1.5 - restedXP())
+  local result = t0 + need
+  walk(t0, function(t, m, chunk)
+    if playing(m) then
+      if chunk >= need then result = t + need; return true end
+      need = need - chunk
+    elseif DB.inn and r and r > 0 and inRange(m, DB.sleepStart, DB.sleepEnd) then
+      local gain = math.min(restLeft, mx * 0.05 * chunk / 28800)  -- 5 % af et level pr. 8 timer
+      restLeft = restLeft - gain
+      need = math.max(0, need - gain / r)
+    end
+  end)
+  return result
+end
+
+local function playableUntil(t1)
+  local t0 = time()
+  if t1 <= t0 then return 0 end
+  if not DB.schedule then return t1 - t0 end
+  local total = 0
+  walk(t0, function(t, m, chunk)
+    chunk = math.min(chunk, t1 - t)
+    if playing(m) then total = total + chunk end
+    return t + chunk >= t1
+  end)
+  return total
+end
+
+-- ---------- byggeklodser ----------
+local function fs(parent, font, size)
+  local t = parent:CreateFontString(nil, "OVERLAY")
+  t:SetFont(font, size, "")
+  t:SetShadowOffset(0, 0)
+  if t.SetWordWrap then t:SetWordWrap(false) end
+  if t.SetMaxLines then t:SetMaxLines(1) end
+  return t
+end
+
+-- panel af tre skiver (top, midte, bund), saa hjoernerne ikke forvraenges
+local function skin(frame, prefix, texW, canvasW)
+  local top = frame:CreateTexture(nil, "BACKGROUND")
+  top:SetPoint("TOPLEFT"); top:SetPoint("TOPRIGHT"); top:SetHeight(20)
+  top:SetTexture(TEX .. prefix .. "Top"); top:SetTexCoord(0, texW / canvasW, 0, 40 / 64)
+  local bot = frame:CreateTexture(nil, "BACKGROUND")
+  bot:SetPoint("BOTTOMLEFT"); bot:SetPoint("BOTTOMRIGHT"); bot:SetHeight(20)
+  bot:SetTexture(TEX .. prefix .. "Bottom"); bot:SetTexCoord(0, texW / canvasW, 0, 40 / 64)
+  local mid = frame:CreateTexture(nil, "BACKGROUND")
+  mid:SetPoint("TOPLEFT", top, "BOTTOMLEFT"); mid:SetPoint("BOTTOMRIGHT", bot, "TOPRIGHT")
+  mid:SetTexture(TEX .. prefix .. "Mid"); mid:SetTexCoord(0, texW / canvasW, 0, 40 / 64)
+end
+
+-- logo, navn og guldstreg oeverst
+local function header(frame, titleText)
+  local logo = frame:CreateTexture(nil, "ARTWORK")
+  logo:SetSize(22, 22); logo:SetPoint("TOPLEFT", 12, -9); logo:SetTexture(LOGO)
+  local title = fs(frame, F_BOLD, 15)
+  title:SetPoint("LEFT", logo, "RIGHT", 7, 0)
+  if titleText then title:SetText(titleText) end
+  local line = frame:CreateTexture(nil, "ARTWORK")
+  line:SetSize(22, 2); line:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -5)
+  line:SetColorTexture(1, 0.8, 0.35, 0.9)
+  return title
+end
+
+local function movable(frame, canMove)
+  frame:SetMovable(true); frame:EnableMouse(true); frame:SetClampedToScreen(true)
+  frame:RegisterForDrag("LeftButton")
+  frame:SetScript("OnDragStart", function(self) if canMove() then self:StartMoving() end end)
+end
+
+-- ---------- hovedvindue ----------
+local W = 260
+local f = CreateFrame("Frame", "LevelETAFrame", UIParent)
+f:SetSize(W, 120)
+skin(f, "Panel", 520, 1024)
+movable(f, function() return not DB.locked end)
+f:SetScript("OnDragStop", function(self)
+  self:StopMovingOrSizing()
+  local p, _, rp, x, y = self:GetPoint()
+  DB.point = {p, rp, x, y}
+end)
+header(f, "|cffffffffLevel|r|cffffd24aETA|r")
+
+-- raekke: label til venstre, vaerdi til hoejre, tynd streg eller bjaelke under
+local function newRow()
+  local c = CreateFrame("Frame", nil, f)
+  c.line = c:CreateTexture(nil, "ARTWORK")
+  c.line:SetPoint("BOTTOMLEFT"); c.line:SetPoint("BOTTOMRIGHT"); c.line:SetHeight(1)
+  c.line:SetColorTexture(1, 1, 1, 0.06)
+  c.track = c:CreateTexture(nil, "ARTWORK")
+  c.track:SetPoint("BOTTOMLEFT", 0, 1); c.track:SetPoint("BOTTOMRIGHT", 0, 1); c.track:SetHeight(3)
+  c.track:SetColorTexture(1, 1, 1, 0.08)
+  c.fill = c:CreateTexture(nil, "OVERLAY")
+  c.fill:SetPoint("BOTTOMLEFT", c.track, "BOTTOMLEFT"); c.fill:SetHeight(3)
+  c.fill:SetColorTexture(0.62, 0.82, 1, 0.9)
+  c.value = fs(c, F_BOLD, 13); c.value:SetPoint("RIGHT"); c.value:SetJustifyH("RIGHT")
+  c.title = fs(c, F_SEMI, 12); c.title:SetPoint("LEFT"); c.title:SetPoint("RIGHT", c.value, "LEFT", -8, 0)
+  c.title:SetJustifyH("LEFT"); c.title:SetTextColor(0.55, 0.58, 0.64)
+  return c
+end
+local rows = {newRow(), newRow(), newRow()}
+
+local function setRow(c, y, title, value, progress, last)
+  c.title:SetText(title); c.value:SetText(value)
+  local bar = type(progress) == "number"
+  c.track:SetShown(bar); c.fill:SetShown(bar)
+  if bar then c.fill:SetWidth((W - 28) * math.max(0.02, math.min(1, progress))) end
+  c.line:SetShown(not last and not bar)
+  local h = bar and 28 or 24
+  c:SetHeight(h); c:ClearAllPoints()
+  c:SetPoint("TOPLEFT", 14, y); c:SetPoint("TOPRIGHT", -14, y); c:Show()
+  return y - h
+end
+
+local function refresh()
+  if not DB then return end
+  f:SetScale(DB.scale)
+  updateLabels()
+  for _, c in ipairs(rows) do c:Hide() end
+  local lvl = UnitLevel("player")
+  local y = -44
+
+  if lvl >= MAXLVL then
+    y = setRow(rows[1], y, T("done"), "", nil, true)
+    f:SetHeight(-y + 10); return
+  end
+
+  local r = shortRate()
+  local rL = longRate()
+  local head = headStart()
+  local list = {}
+
+  -- level ved sengetid, med bjaelke for hvor langt inde i levelet
+  if DB.schedule and DB.sleepStart ~= DB.sleepEnd then
+    local d = date("*t")
+    local nowMin = d.hour * 60 + d.min
+    d.hour, d.min, d.sec = math.floor(DB.sleepStart / 60), DB.sleepStart % 60, 0
+    local bt, key = time(d), "today"
+    if nowMin >= DB.sleepStart then bt, key = bt + 86400, "tomorrow" end
+    local at = levelAfter(playableUntil(bt), r, head)
+    if at >= MAXLVL then
+      list[#list + 1] = {string.format(T(key), hhmm(DB.sleepStart)), "|cff9fd0ff" .. T("level") .. " 60|r"}
+    else
+      local p = at % 1
+      list[#list + 1] = {string.format(T(key), hhmm(DB.sleepStart)),
+        string.format("|cff9fd0ff%s %d|r  |cff5c6270%d%%|r", T("level"), math.floor(at), math.floor(p * 100)), p}
+    end
+  end
+  -- naeste tiende level og level 60
+  local mile = (math.floor(lvl / 10) + 1) * 10
+  if mile < MAXLVL then
+    list[#list + 1] = {T("level") .. " " .. mile, "|cffe8eaf0" .. nice(eta(timeTo(mile, rL, head), rL), 15) .. "|r"}
+  end
+  list[#list + 1] = {T("level") .. " 60", "|cffffd24a" .. nice(eta(timeTo(MAXLVL, rL, head), rL), 30) .. "|r"}
+
+  for i, it in ipairs(list) do y = setRow(rows[i], y, it[1], it[2], it[3], i == #list) end
+  f:SetHeight(-y + 10)
+end
+
+-- ---------- indstillinger ----------
+local SW, COL = 520, 260
+local S = CreateFrame("Frame", "LevelETASettings", UIParent)
+S:SetSize(SW, 400); S:SetPoint("CENTER"); S:SetFrameStrata("DIALOG"); S:Hide()
+skin(S, "Wide", 1040, 2048)
+movable(S, function() return true end)
+S:SetScript("OnDragStop", S.StopMovingOrSizing)
+tinsert(UISpecialFrames, "LevelETASettings")  -- Esc lukker
+local sTitle = header(S)
+label(sTitle, "settings")
+
+local closeX = CreateFrame("Button", nil, S)
+closeX:SetSize(20, 20); closeX:SetPoint("TOPRIGHT", -10, -10)
+local closeT = fs(closeX, F_BOLD, 16); closeT:SetPoint("CENTER"); closeT:SetText("×"); closeT:SetTextColor(0.55, 0.58, 0.64)
+closeX:SetScript("OnEnter", function() closeT:SetTextColor(1, 1, 1) end)
+closeX:SetScript("OnLeave", function() closeT:SetTextColor(0.55, 0.58, 0.64) end)
+closeX:SetScript("OnClick", function() S:Hide() end)
+
+local controls = {}
+local colX = 0
+
+local function section(y, key)
+  local t = fs(S, F_BOLD, 11); t:SetPoint("TOPLEFT", colX + 18, y); t:SetTextColor(1, 0.82, 0.4)
+  label(t, key)
+end
+
+local function toggle(y, lkey, get, set)
+  local c = CreateFrame("CheckButton", nil, S)
+  c:SetSize(32, 18); c:SetPoint("TOPRIGHT", S, "TOPLEFT", colX + COL - 18, y)
+  local off = c:CreateTexture(nil, "ARTWORK"); off:SetAllPoints(); off:SetTexture(TEX .. "ToggleOff"); off:SetTexCoord(0, 1, 0, 36 / 64)
+  local on = c:CreateTexture(nil, "ARTWORK"); on:SetAllPoints(); on:SetTexture(TEX .. "ToggleOn"); on:SetTexCoord(0, 1, 0, 36 / 64)
+  local t = fs(S, F_SEMI, 12); t:SetPoint("TOPLEFT", colX + 18, y - 2); t:SetTextColor(0.85, 0.87, 0.92)
+  label(t, lkey)
+  local function show() local v = get(); on:SetShown(v); off:SetShown(not v) end
+  c:SetScript("OnClick", function() set(not get()); show(); refresh() end)
+  c.load = show
+  controls[#controls + 1] = c
+end
+
+local function slider(y, lkey, minV, maxV, step, get, set, fmt)
+  local t = fs(S, F_SEMI, 12); t:SetPoint("TOPLEFT", colX + 18, y); t:SetTextColor(0.85, 0.87, 0.92)
+  label(t, lkey)
+  local val = fs(S, F_BOLD, 12); val:SetPoint("TOPRIGHT", S, "TOPLEFT", colX + COL - 18, y); val:SetTextColor(1, 0.82, 0.4)
+  local tw = COL - 36
+  local s = CreateFrame("Slider", nil, S)
+  s:SetOrientation("HORIZONTAL")
+  s:SetSize(tw, 16); s:SetPoint("TOPLEFT", colX + 18, y - 18)
+  local track = s:CreateTexture(nil, "BACKGROUND")
+  track:SetPoint("LEFT"); track:SetPoint("RIGHT"); track:SetHeight(3); track:SetColorTexture(1, 1, 1, 0.12)
+  local fill = s:CreateTexture(nil, "ARTWORK")
+  fill:SetPoint("LEFT"); fill:SetHeight(3); fill:SetColorTexture(1, 0.8, 0.35, 0.9)
+  s:SetThumbTexture(TEX .. "Thumb")
+  local thumb = s:GetThumbTexture(); if thumb then thumb:SetSize(16, 16) end
+  s:SetMinMaxValues(minV, maxV); s:SetValueStep(step)
+  if s.SetObeyStepOnDrag then s:SetObeyStepOnDrag(true) end
+  s:EnableMouseWheel(true)
+  s:SetScript("OnMouseWheel", function(self, d)
+    self:SetValue(math.max(minV, math.min(maxV, self:GetValue() + d * step)))
+  end)
+  local function paint(v)
+    val:SetText(fmt(v))
+    fill:SetWidth(math.max(1, tw * (v - minV) / (maxV - minV)))
+  end
+  s:SetScript("OnValueChanged", function(self, v)
+    v = math.floor(v / step + 0.5) * step
+    paint(v)
+    if self.loading then return end
+    set(v); refresh()
+  end)
+  s.load = function() s.loading = true; s:SetValue(get()); paint(get()); s.loading = false end
+  controls[#controls + 1] = s
+end
+
+local function pill(text, w)
+  local b = CreateFrame("Button", nil, S)
+  b:SetSize(w, 24)
+  local bg = b:CreateTexture(nil, "BACKGROUND"); bg:SetAllPoints(); bg:SetTexture(TEX .. "Pill"); bg:SetTexCoord(0, 240 / 256, 0, 48 / 64)
+  b.text = fs(b, F_SEMI, 12); b.text:SetPoint("CENTER"); b.text:SetTextColor(0.85, 0.87, 0.92)
+  b:SetScript("OnEnter", function() b.text:SetTextColor(1, 0.82, 0.4) end)
+  b:SetScript("OnLeave", function() b.text:SetTextColor(0.85, 0.87, 0.92) end)
+  return b
+end
+
+local clockFmt = function(v) return hhmm(v) end
+
+-- venstre kolonne: doegnrytme
+colX = 0
+section(-50, "rhythm")
+toggle(-72, "useRhythm", function() return DB.schedule end, function(v) DB.schedule = v end)
+slider(-104, "wake", 0, 1410, 30, function() return DB.sleepEnd end, function(v) DB.sleepEnd = v end, clockFmt)
+slider(-150, "bed", 0, 1410, 30, function() return DB.sleepStart end, function(v) DB.sleepStart = v end, clockFmt)
+slider(-196, "breakAt", 0, 1410, 30, function() return DB.breakStart end, function(v) DB.breakStart = v end, clockFmt)
+slider(-242, "breakLen", 0, 180, 15, function() return DB.breakLen end, function(v) DB.breakLen = v end,
+  function(v) return v == 0 and T("none") or (v .. " " .. T("min")) end)
+
+-- hoejre kolonne: visning, quests og rested
+colX = COL
+section(-50, "display")
+toggle(-72, "showWin", function() return not DB.hidden end, function(v) DB.hidden = not v; f:SetShown(v) end)
+toggle(-100, "lock", function() return DB.locked end, function(v) DB.locked = v end)
+slider(-132, "size", 0.6, 2.0, 0.05, function() return DB.scale end, function(v) DB.scale = v end,
+  function(v) return string.format("%d%%", math.floor(v * 100 + 0.5)) end)
+section(-184, "questSec")
+slider(-208, "qBuf", 0, 100, 5, function() return DB.questBuffer end, function(v) DB.questBuffer = v end,
+  function(v) return string.format("-%d%%", v) end)
+toggle(-254, "inn", function() return DB.inn end, function(v) DB.inn = v end)
+
+-- info: virker alene og sammen med ForeverXP Bar
+local infoLine = S:CreateTexture(nil, "ARTWORK")
+infoLine:SetPoint("TOPLEFT", 18, -290); infoLine:SetPoint("TOPRIGHT", -18, -290); infoLine:SetHeight(1)
+infoLine:SetColorTexture(1, 1, 1, 0.06)
+local infoText = fs(S, F_SEMI, 11); infoText:SetPoint("TOPLEFT", 18, -302); infoText:SetTextColor(0.55, 0.58, 0.64)
+label(infoText, "standalone")
+local fxbText = fs(S, F_SEMI, 11); fxbText:SetPoint("TOPLEFT", 18, -320)
+
+-- knapper i bunden
+local langBtn = pill("", 150); langBtn:SetPoint("BOTTOMLEFT", 18, 16); label(langBtn.text, "language")
+langBtn:SetScript("OnClick", function()
+  DB.lang = (DB.lang == "da") and "en" or "da"
+  updateLabels(); refresh()
+  for _, c in ipairs(controls) do c.load() end
+end)
+local resetBtn = pill("", 130); resetBtn:SetPoint("LEFT", langBtn, "RIGHT", 10, 0); label(resetBtn.text, "reset")
+resetBtn:SetScript("OnClick", function()
+  DB.samples = {}; DB.sessionStart = DB.play; DB.eS = nil; DB.eL = nil; refresh()
+end)
+local doneBtn = pill("", 100); doneBtn:SetPoint("BOTTOMRIGHT", -18, 16); label(doneBtn.text, "close")
+doneBtn:SetScript("OnClick", function() S:Hide() end)
+
+S:SetScript("OnShow", function()
+  updateLabels()
+  if fxbRecord() then fxbText:SetText("|cff5cff7a●|r  " .. T("fxbFound")); fxbText:SetTextColor(0.85, 0.87, 0.92)
+  else fxbText:SetText("|cff8a8f99●|r  " .. T("fxbMissing")); fxbText:SetTextColor(0.55, 0.58, 0.64) end
+  for _, c in ipairs(controls) do c.load() end
+end)
+
+local function toggleSettings() S:SetShown(not S:IsShown()) end
+local function toggleWindow()
+  DB.hidden = f:IsShown()
+  f:SetShown(not DB.hidden)
+  if S:IsShown() then for _, c in ipairs(controls) do c.load() end end
+end
+
+-- ---------- minimap-knap ----------
+local mmb = CreateFrame("Button", "LevelETAMinimapButton", Minimap)
+mmb:SetSize(31, 31); mmb:SetFrameStrata("MEDIUM"); mmb:SetFrameLevel(8)
+mmb:RegisterForClicks("LeftButtonUp", "RightButtonUp"); mmb:RegisterForDrag("LeftButton")
+mmb:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+local mmBg = mmb:CreateTexture(nil, "BACKGROUND")
+mmBg:SetSize(20, 20); mmBg:SetPoint("TOPLEFT", 7, -5); mmBg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
+local mmIcon = mmb:CreateTexture(nil, "ARTWORK")
+mmIcon:SetSize(21, 21); mmIcon:SetPoint("TOPLEFT", 5, -5); mmIcon:SetTexture(LOGO)
+local mmBorder = mmb:CreateTexture(nil, "OVERLAY")
+mmBorder:SetSize(53, 53); mmBorder:SetPoint("TOPLEFT"); mmBorder:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+
+local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
+local function placeButton()
+  local a = math.rad(DB.mmAngle)
+  local rad = (Minimap:GetWidth() / 2) + 5
+  mmb:ClearAllPoints()
+  mmb:SetPoint("CENTER", Minimap, "CENTER", math.cos(a) * rad, math.sin(a) * rad)
+end
+mmb:SetScript("OnDragStart", function(self)
+  self:SetScript("OnUpdate", function()
+    local mx, my = Minimap:GetCenter()
+    local px, py = GetCursorPosition()
+    local sc = Minimap:GetEffectiveScale()
+    DB.mmAngle = math.deg(atan2(py / sc - my, px / sc - mx))
+    placeButton()
+  end)
+end)
+mmb:SetScript("OnDragStop", function(self) self:SetScript("OnUpdate", nil) end)
+mmb:SetScript("OnClick", function(_, btn) if btn == "RightButton" then toggleSettings() else toggleWindow() end end)
+mmb:SetScript("OnEnter", function(self)
+  GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+  GameTooltip:AddLine(NAME, 1, 0.82, 0.3)
+  if UnitLevel("player") < MAXLVL then
+    local rL, head = longRate(), headStart()
+    GameTooltip:AddDoubleLine(T("level") .. " 60", nice(eta(timeTo(MAXLVL, rL, head), rL), 30), 0.85, 0.85, 0.85, 1, 0.82, 0)
+  end
+  GameTooltip:AddLine(" ")
+  GameTooltip:AddLine(T("tipLeft"), 0.6, 0.6, 0.6)
+  GameTooltip:AddLine(T("tipRight"), 0.6, 0.6, 0.6)
+  GameTooltip:Show()
+end)
+mmb:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+-- ---------- /played (skjult i chatten) ----------
+local wantPlayed = false
+local function requestPlayed()
+  if not RequestTimePlayed then return end
+  wantPlayed = true
+  RequestTimePlayed()
+end
+if ChatFrame_DisplayTimePlayed then
+  local orig = ChatFrame_DisplayTimePlayed
+  ChatFrame_DisplayTimePlayed = function(...)
+    if wantPlayed then return end  -- vores egen forespoergsel: ingen besked i chatten
+    return orig(...)
+  end
+end
+
+-- ---------- events ----------
+local lastXP, lastMax, lastLevel, lastEx
+local acc = 0
+
+f:RegisterEvent("ADDON_LOADED")
+f:RegisterEvent("PLAYER_ENTERING_WORLD")
+f:RegisterEvent("PLAYER_XP_UPDATE")
+f:RegisterEvent("PLAYER_LEVEL_UP")
+f:RegisterEvent("QUEST_LOG_UPDATE")
+f:RegisterEvent("UPDATE_EXHAUSTION")
+f:RegisterEvent("TIME_PLAYED_MSG")
+f:SetScript("OnEvent", function(self, event, a1, a2)
+  if event == "ADDON_LOADED" and a1 == ADDON then
+    LevelETADB = LevelETADB or {}
+    DB = LevelETADB
+    for k, v in pairs(defaults) do if DB[k] == nil then DB[k] = v end end
+    if not DB.sessionStart then DB.sessionStart = DB.play end
+    if DB.calcVer ~= 7 then DB.eS, DB.eL, DB.calcVer = nil, nil, 7 end  -- smid gamle udglattede tempi ud
+    self:ClearAllPoints()
+    if DB.point then self:SetPoint(DB.point[1], UIParent, DB.point[2], DB.point[3], DB.point[4])
+    else self:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -220, -200) end
+    if DB.hidden then self:Hide() end
+    placeButton()
+  elseif event == "PLAYER_ENTERING_WORLD" then
+    lastXP, lastMax, lastLevel, lastEx = UnitXP("player"), UnitXPMax("player"), UnitLevel("player"), restedXP()
+    questDirty = true
+    if C_Timer and C_Timer.After then C_Timer.After(3, requestPlayed) end
+    refresh()
+  elseif event == "TIME_PLAYED_MSG" then
+    -- chatvinduet faar beskeden foer os; slip spaerringen lidt efter
+    if C_Timer and C_Timer.After then C_Timer.After(1, function() wantPlayed = false end) else wantPlayed = false end
+    local total, atLevel = a1, a2
+    if type(total) == "number" and type(atLevel) == "number" then
+      playedLevelTime, playedAt = atLevel, time()
+      DB.ptimes[UnitLevel("player")] = total - atLevel  -- praecis start paa dette level
+    end
+  elseif event == "PLAYER_LEVEL_UP" then
+    if C_Timer and C_Timer.After then C_Timer.After(2, requestPlayed) end
+  elseif event == "QUEST_LOG_UPDATE" then
+    questDirty = true
+  elseif event == "UPDATE_EXHAUSTION" then
+    local ex = restedXP()
+    if lastEx and ex > lastEx then lastEx = ex end  -- rested steg (inn), ikke bonus
+  elseif event == "PLAYER_XP_UPDATE" then
+    local xp, mx, lvl = UnitXP("player"), UnitXPMax("player"), UnitLevel("player")
+    local gain
+    if lastLevel and lvl > lastLevel then
+      gain = (lastMax - lastXP) + xp
+      DB.times[lvl] = DB.play
+      playedLevelTime, playedAt = 0, time()
+    else
+      gain = xp - (lastXP or xp)
+    end
+    local ex = restedXP()
+    local bonus = math.max(0, math.min(gain, (lastEx or ex) - ex))  -- brugt rested = bonus-XP
+    if gain > 0 then DB.samples[#DB.samples + 1] = {p = DB.play, xp = gain, b = bonus} end
+    local cut = DB.play - WINDOW * 2
+    while DB.samples[1] and DB.samples[1].p < cut do table.remove(DB.samples, 1) end
+    lastXP, lastMax, lastLevel, lastEx = xp, mx, lvl, ex
+    refresh()
+  end
+end)
+
+f:SetScript("OnUpdate", function(_, el)
+  if not DB then return end
+  DB.play = DB.play + el
+  acc = acc + el
+  if acc >= 5 then acc = 0; refresh() end
+end)
+
+-- ---------- kommandoer ----------
+SLASH_LEVELETA1 = "/leveleta"
+SLASH_LEVELETA2 = "/lp"
+SlashCmdList.LEVELETA = function(msg)
+  msg = (msg or ""):lower()
+  if msg == "vis" or msg == "show" then toggleWindow() else toggleSettings() end
+end
