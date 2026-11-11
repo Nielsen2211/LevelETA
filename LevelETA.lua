@@ -35,6 +35,8 @@ local LOC = {
     tipLeft = "Left click: show or hide", tipRight = "Right click: settings", nextLvl = "Next level",
     standalone = "Works on its own. Uses ForeverXP Bar data too, when it is installed.",
     fxbFound = "ForeverXP Bar: found, its level history is used", fxbMissing = "ForeverXP Bar: not installed, using LevelETA's own data",
+    showTimes = "Show level times", timesHead = "Level times", now = "now", noTimes = "No level times yet",
+    avg = "Average per level", hm = "%dh %02dm",
   },
   da = {
     level = "Level", today = "I dag kl. %s", tomorrow = "I morgen kl. %s",
@@ -50,6 +52,8 @@ local LOC = {
     tipLeft = "Venstreklik: vis eller skjul", tipRight = "Højreklik: indstillinger", nextLvl = "Næste level",
     standalone = "Virker helt alene. Bruger også data fra ForeverXP Bar, hvis den er installeret.",
     fxbFound = "ForeverXP Bar: fundet, dens levelhistorik bruges", fxbMissing = "ForeverXP Bar: ikke installeret, bruger LevelETA's egne data",
+    showTimes = "Vis level-tider", timesHead = "Level-tider", now = "nu", noTimes = "Ingen level-tider endnu",
+    avg = "Snit pr. level", hm = "%dt %02dm",
   },
 }
 local function T(k) return (LOC[(DB and DB.lang) or "en"] or LOC.en)[k] end
@@ -61,6 +65,7 @@ local defaults = {
   play = 0, samples = {}, times = {}, ptimes = {}, fxbTimes = {},
   schedule = true, sleepStart = 23 * 60, sleepEnd = 7 * 60, breakStart = 12 * 60, breakLen = 0,
   questBuffer = 25, inn = true, scale = 1, lang = "en", locked = false, hidden = false, mmAngle = 200,
+  showTimes = false,
 }
 
 -- ---------- tid og datoer ----------
@@ -455,18 +460,113 @@ local function setRow(c, y, title, value, progress, last)
   return y - h
 end
 
-local function refresh()
-  if not DB then return end
-  f:SetScale(DB.scale)
-  updateLabels()
-  for _, c in ipairs(rows) do c:Hide() end
-  local lvl = UnitLevel("player")
-  local y = -44
+-- ---------- level-tider (valgfri liste) ----------
+local SHOWN = 10                  -- antal faerdige levels i listen
+local TX, TR = 84, 58             -- bjaelken starter efter label og slutter foer tiden
+local TW = W - 28 - TX - TR
 
-  if lvl >= MAXLVL then
-    y = setRow(rows[1], y, T("done"), "", nil, true)
-    f:SetHeight(-y + 10); return
+local function dur(sec)
+  sec = math.floor(sec + 0.5)
+  if sec < 60 then return "<1m" end
+  local m = math.floor(sec / 60)
+  if m < 60 then return m .. "m" end
+  return string.format(T("hm"), math.floor(m / 60), m % 60)
+end
+
+-- tid brugt paa det level du er paa nu
+local function levelElapsed(rec)
+  local lvl = UnitLevel("player")
+  if playedLevelTime then return playedLevelTime + (time() - playedAt) end
+  if type(DB.times[lvl]) == "number" then return DB.play - DB.times[lvl] end
+  if rec and type(rec.times[lvl]) == "number" and type(rec.elapsed) == "number" then return rec.elapsed - rec.times[lvl] end
+end
+
+local tSep = f:CreateTexture(nil, "ARTWORK"); tSep:SetHeight(1); tSep:SetColorTexture(1, 1, 1, 0.06)
+local tHead = fs(f, F_BOLD, 11); tHead:SetTextColor(1, 0.82, 0.4); label(tHead, "timesHead")
+local tAvgLine = f:CreateTexture(nil, "ARTWORK"); tAvgLine:SetHeight(1); tAvgLine:SetColorTexture(1, 1, 1, 0.06)
+local tRows = {}
+
+local function timeRow(i)
+  if tRows[i] then return tRows[i] end
+  local c = CreateFrame("Frame", nil, f)
+  c:SetHeight(17)
+  c.title = fs(c, F_SEMI, 11); c.title:SetPoint("LEFT"); c.title:SetJustifyH("LEFT")
+  c.value = fs(c, F_BOLD, 12); c.value:SetPoint("RIGHT"); c.value:SetJustifyH("RIGHT")
+  c.track = c:CreateTexture(nil, "ARTWORK"); c.track:SetHeight(4)
+  c.track:SetPoint("LEFT", TX, 0); c.track:SetPoint("RIGHT", -TR, 0)
+  c.track:SetColorTexture(1, 1, 1, 0.06)
+  c.fill = c:CreateTexture(nil, "OVERLAY"); c.fill:SetHeight(4); c.fill:SetPoint("LEFT", c.track, "LEFT")
+  tRows[i] = c
+  return c
+end
+
+local function hideTimes()
+  tSep:Hide(); tHead:Hide(); tAvgLine:Hide()
+  for _, c in ipairs(tRows) do c:Hide() end
+end
+
+local function placeTime(i, y, title, value, frac, now)
+  local c = timeRow(i)
+  c.title:SetText(title); c.value:SetText(value or "")
+  if now then
+    c.title:SetTextColor(0.62, 0.82, 1); c.value:SetTextColor(0.62, 0.82, 1); c.fill:SetColorTexture(0.62, 0.82, 1, 0.9)
+  else
+    c.title:SetTextColor(0.55, 0.58, 0.64); c.value:SetTextColor(0.91, 0.92, 0.94); c.fill:SetColorTexture(0.62, 0.82, 1, 0.35)
   end
+  local bar = type(frac) == "number"
+  c.track:SetShown(bar); c.fill:SetShown(bar)
+  if bar then c.fill:SetWidth(math.max(1, TW * math.min(1, frac))) end
+  c:ClearAllPoints(); c:SetPoint("TOPLEFT", 14, y); c:SetPoint("TOPRIGHT", -14, y); c:Show()
+  return y - 17
+end
+
+local function drawTimes(y)
+  y = y - 6
+  tSep:ClearAllPoints(); tSep:SetPoint("TOPLEFT", 14, y); tSep:SetPoint("TOPRIGHT", -14, y); tSep:Show()
+  y = y - 10
+  tHead:ClearAllPoints(); tHead:SetPoint("TOPLEFT", 14, y); tHead:Show()
+  y = y - 20
+
+  local lvl = UnitLevel("player")
+  local rec = fxbRecord()
+  local hist = mergedHistory(rec)
+  local list = {}
+  if lvl < MAXLVL then
+    local el = levelElapsed(rec)
+    if el and el > 0 then list[1] = {L = lvl, d = el, now = true} end
+  end
+  local sum, n = 0, 0
+  for i = #hist, 1, -1 do
+    local x = hist[i]
+    if x.L < lvl then
+      list[#list + 1] = x; sum = sum + x.d; n = n + 1
+      if n >= SHOWN then break end
+    end
+  end
+
+  for _, c in ipairs(tRows) do c:Hide() end
+  tAvgLine:Hide()
+  if #list == 0 then return placeTime(1, y, T("noTimes")) end
+
+  local mx = 0
+  for _, x in ipairs(list) do mx = math.max(mx, x.d) end
+  for i, x in ipairs(list) do
+    local title = T("level") .. " " .. x.L
+    if x.now then title = title .. "  |cff5c6270" .. T("now") .. "|r" end
+    y = placeTime(i, y, title, dur(x.d), x.d / mx, x.now)
+  end
+  if n >= 2 then
+    y = y - 4
+    tAvgLine:ClearAllPoints(); tAvgLine:SetPoint("TOPLEFT", 14, y); tAvgLine:SetPoint("TOPRIGHT", -14, y); tAvgLine:Show()
+    y = placeTime(#list + 1, y - 4, T("avg"), "|cffffd24a" .. dur(sum / n) .. "|r")
+  end
+  return y
+end
+
+-- de tre faste raekker
+local function mainRows(y)
+  local lvl = UnitLevel("player")
+  if lvl >= MAXLVL then return setRow(rows[1], y, T("done"), "", nil, true) end
 
   local r = shortRate()
   local rL = longRate()
@@ -497,13 +597,23 @@ local function refresh()
   list[#list + 1] = {T("level") .. " 60", "|cffffd24a" .. nice(eta(timeTo(MAXLVL, rL, head), rL), 30) .. "|r"}
 
   for i, it in ipairs(list) do y = setRow(rows[i], y, it[1], it[2], it[3], i == #list) end
+  return y
+end
+
+local function refresh()
+  if not DB then return end
+  f:SetScale(DB.scale)
+  updateLabels()
+  for _, c in ipairs(rows) do c:Hide() end
+  local y = mainRows(-44)
+  if DB.showTimes then y = drawTimes(y) else hideTimes() end
   f:SetHeight(-y + 10)
 end
 
 -- ---------- indstillinger ----------
 local SW, COL = 520, 260
 local S = CreateFrame("Frame", "LevelETASettings", UIParent)
-S:SetSize(SW, 400); S:SetPoint("CENTER"); S:SetFrameStrata("DIALOG"); S:Hide()
+S:SetSize(SW, 428); S:SetPoint("CENTER"); S:SetFrameStrata("DIALOG"); S:Hide()
 skin(S, "Wide", 1040, 2048)
 movable(S, function() return true end)
 S:SetScript("OnDragStop", S.StopMovingOrSizing)
@@ -599,24 +709,25 @@ slider(-242, "breakLen", 0, 180, 15, function() return DB.breakLen end, function
 colX = COL
 section(-50, "display")
 toggle(-72, "showWin", function() return not DB.hidden end, function(v) DB.hidden = not v; f:SetShown(v) end)
-toggle(-100, "lock", function() return DB.locked end, function(v) DB.locked = v end)
-slider(-132, "size", 0.6, 2.0, 0.05, function() return DB.scale end, function(v) DB.scale = v end,
+toggle(-100, "showTimes", function() return DB.showTimes end, function(v) DB.showTimes = v end)
+toggle(-128, "lock", function() return DB.locked end, function(v) DB.locked = v end)
+slider(-160, "size", 0.6, 2.0, 0.05, function() return DB.scale end, function(v) DB.scale = v end,
   function(v) return string.format("%d%%", math.floor(v * 100 + 0.5)) end)
-section(-184, "questSec")
-slider(-208, "qBuf", 0, 100, 5, function() return DB.questBuffer end, function(v) DB.questBuffer = v end,
+section(-212, "questSec")
+slider(-236, "qBuf", 0, 100, 5, function() return DB.questBuffer end, function(v) DB.questBuffer = v end,
   function(v) return string.format("-%d%%", v) end)
-toggle(-254, "inn", function() return DB.inn end, function(v) DB.inn = v end)
+toggle(-282, "inn", function() return DB.inn end, function(v) DB.inn = v end)
 
 -- info: virker alene og sammen med ForeverXP Bar
 local infoLine = S:CreateTexture(nil, "ARTWORK")
-infoLine:SetPoint("TOPLEFT", 18, -290); infoLine:SetPoint("TOPRIGHT", -18, -290); infoLine:SetHeight(1)
+infoLine:SetPoint("TOPLEFT", 18, -318); infoLine:SetPoint("TOPRIGHT", -18, -318); infoLine:SetHeight(1)
 infoLine:SetColorTexture(1, 1, 1, 0.06)
-local infoText = fs(S, F_SEMI, 11); infoText:SetPoint("TOPLEFT", 18, -302); infoText:SetTextColor(0.55, 0.58, 0.64)
+local infoText = fs(S, F_SEMI, 11); infoText:SetPoint("TOPLEFT", 18, -330); infoText:SetTextColor(0.55, 0.58, 0.64)
 label(infoText, "standalone")
 local fxbDot = S:CreateTexture(nil, "ARTWORK")
-fxbDot:SetSize(7, 7); fxbDot:SetPoint("TOPLEFT", 19, -322); fxbDot:SetTexture("Interface\\Buttons\\WHITE8x8")
+fxbDot:SetSize(7, 7); fxbDot:SetPoint("TOPLEFT", 19, -350); fxbDot:SetTexture("Interface\\Buttons\\WHITE8x8")
 if fxbDot.SetMask then fxbDot:SetMask("Interface\\CharacterFrame\\TempPortraitAlphaMask") end
-local fxbText = fs(S, F_SEMI, 11); fxbText:SetPoint("TOPLEFT", 32, -320)
+local fxbText = fs(S, F_SEMI, 11); fxbText:SetPoint("TOPLEFT", 32, -348)
 
 -- knapper i bunden
 local langBtn = pill("", 150); langBtn:SetPoint("BOTTOMLEFT", 18, 16); label(langBtn.text, "language")

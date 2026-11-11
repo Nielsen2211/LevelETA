@@ -14,6 +14,12 @@ LevelETA is a small, clean window for World of Warcraft: Forever that answers th
 
 Times are shown as real dates: *Tomorrow at 07:00*, *Friday at 18:30*, *Nov 21 at 16:15*.
 
+### Level times (optional)
+
+Turn on **Show level times** in the settings to see how long each of your last 10 levels took. The level you are on now is shown in blue and counts up while you play, and your average per level is shown at the bottom. It is off by default.
+
+![LevelETA level times](screenshots/level-times.png)
+
 ---
 
 ## Works on its own, and with ForeverXP Bar
@@ -59,6 +65,7 @@ Right click the minimap button, or type `/lp`.
 | **Play from / Play until** | When you usually play each day |
 | **Break starts / Break length** | An optional daily break. Short breaks while logged in are already counted, so most players can leave this at *none* |
 | **Show window / Lock window / Size** | Display options |
+| **Show level times** | Show how long each of your last 10 levels took (off by default) |
 | **Quest buffer** | How much of your ready quest XP to ignore (default 25 %) |
 | **Rested XP while logged out** | Count rested XP gained while logged out in an inn |
 | **Language** | English or Danish |
@@ -77,7 +84,7 @@ Left click the minimap button to show or hide the window.
 
 LevelETA viser, hvilket level du er på, når du stopper med at spille i dag, hvornår du rammer dit næste tiende level, og hvornår du rammer level 60.
 
-Den virker helt alene og bruger `/played` og sine egne målinger. Er ForeverXP Bar installeret, bruger den også dens levelhistorik, så den er præcis fra første dag. Indstillinger: højreklik på minimap-knappen eller skriv `/lp`. Sproget kan skiftes til dansk i indstillingerne.
+Den virker helt alene og bruger `/played` og sine egne målinger. Er ForeverXP Bar installeret, bruger den også dens levelhistorik, så den er præcis fra første dag. Indstillinger: højreklik på minimap-knappen eller skriv `/lp`. Sproget kan skiftes til dansk i indstillingerne. Under Visning kan du slå level-tider til og se, hvor lang tid dine sidste 10 levels tog.
 
 ---
 
