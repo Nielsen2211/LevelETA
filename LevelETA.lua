@@ -1024,17 +1024,32 @@ bar:SetScript("OnLeave", function() GameTooltip:Hide() end)
 -- Blizzards egen XP-bar (samme rammer som ForeverXP Bar skjuler)
 local BLIZZ_BARS = {"StatusTrackingBarManager", "MainStatusTrackingBarContainer", "MainMenuBarXPBar",
   "MainMenuExpBar", "MainMenuBarExpBar", "MainMenuBarMaxLevelBar", "ReputationWatchBar"}
+-- Blizzards bar goeres usynlig (alpha 0, ingen mus) i stedet for at blive skjult. Skjuler man den,
+-- viser spillet den igen ved hver XP-opdatering og flytter alle actionbars rundt hver gang.
 local function applyBlizz()
+  if not DB then return end
   for _, name in ipairs(BLIZZ_BARS) do
     local fr = _G[name]
-    if fr and type(fr.Hide) == "function" and type(fr.Show) == "function" then
+    if fr and type(fr.SetAlpha) == "function" then
       pcall(function()
-        if not fr.levelETAHooked and hooksecurefunc then
-          fr.levelETAHooked = true
-          hooksecurefunc(fr, "Show", function(self) if DB and DB.hideBlizz then self:Hide() end end)
+        if DB.hideBlizz then
+          if fr:GetAlpha() > 0 then fr:SetAlpha(0) end
+          if not fr.levelETAHid then
+            fr.levelETAHid, fr.levelETAMouse = true, {}
+            local function mute(x, depth)
+              if x.IsMouseEnabled and x:IsMouseEnabled() then
+                fr.levelETAMouse[#fr.levelETAMouse + 1] = x; x:EnableMouse(false)
+              end
+              if depth < 3 and x.GetChildren then for _, ch in ipairs({x:GetChildren()}) do mute(ch, depth + 1) end end
+            end
+            mute(fr, 0)
+          end
+        elseif fr.levelETAHid then
+          fr.levelETAHid = nil
+          fr:SetAlpha(1)
+          for _, x in ipairs(fr.levelETAMouse or {}) do pcall(x.EnableMouse, x, true) end
+          fr.levelETAMouse = nil
         end
-        if DB.hideBlizz then fr:Hide() elseif fr.levelETAHid then fr:Show() end
-        fr.levelETAHid = DB.hideBlizz
       end)
     end
   end
@@ -1359,6 +1374,7 @@ local function refresh()
   head = head or headStart(r)
   updateBar(r, head)
   if bar:IsShown() then updateActivity(rL or longRate(r, est), head) end
+  if DB.hideBlizz then applyBlizz() end  -- billigt: saetter kun alpha igen, hvis spillet har aendret den
   INFO.mh, INFO.mhOn = nil, false
   if t0 then  -- egen maaling til /lp perf
     local ms = debugprofilestop() - t0
