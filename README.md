@@ -35,6 +35,8 @@ Turn on **Show level times** in the settings to see how long each of your last l
 
 Turn on **Show XP bar** in the settings for an XP bar and XP tracker in the same style. It shows your XP, completed quests you have not turned in (gold) and your rested XP (light blue), with XP per hour, time to next level, ready quest XP and rested XP in percent below the bar. Active XP buffs (food and the Cozy Sleeping Bag) are shown with the time they have left. Hover the bar for kills and quests to level and stats for this session. You can also hide Blizzard's own XP bar. It is off by default.
 
+![LevelETA XP bar and activity bar](screenshots/xp-bar.png)
+
 Next to the XP bar is a small **activity bar**. It shows how much of the last 10 minutes you were active (fighting, earning XP or turning in quests). Hover it to see how your time on this level and this session splits into fighting and questing, travelling, flying, town, AFK and dead.
 
 Click the activity bar (or type `/lp goal`) to set a **goal**, for example level 60 before Monday 05:00. A white line on the activity bar then shows how active you need to be to make it, based on your pace and your play schedule. The bar turns green when you are above the line and red when you are below. The tooltip shows when you will reach the goal at your current pace and how far ahead or behind you are.
