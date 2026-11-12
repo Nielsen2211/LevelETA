@@ -50,6 +50,10 @@ local LOC = {
     needAct = "You need to be active", atPace = "At your pace now", ahead = "Ahead by", behind = "Behind by",
     impossible = "Not reachable at your pace", goalDone = "Goal reached!", clickGoal = "Click: set goal",
     goalBtn = "Goal", dh = "%dd %dh",
+    tabWindow = "Window", tabBar = "XP bar", tabTime = "Play time", winSec = "Window", rowsSec = "Show in the window",
+    showToday = "Level when I stop today", showNext = "Next tenth level", show60 = "Level 60", showBuffsWin = "XP buffs",
+    showMinimap = "Minimap button", onBar = "On the bar", showStats = "Numbers under the bar",
+    showBuffsBar = "XP buffs on the bar", setGoal = "Set goal",
   },
   da = {
     level = "Level", today = "I dag kl. %s", tomorrow = "I morgen kl. %s",
@@ -80,6 +84,10 @@ local LOC = {
     needAct = "Du skal være aktiv", atPace = "Med dit tempo nu", ahead = "Foran med", behind = "Bagud med",
     impossible = "Kan ikke nås med dit tempo", goalDone = "Mål nået!", clickGoal = "Klik: sæt mål",
     goalBtn = "Mål", dh = "%dd %dt",
+    tabWindow = "Vindue", tabBar = "XP-bar", tabTime = "Spilletid", winSec = "Vinduet", rowsSec = "Vis i vinduet",
+    showToday = "Level når jeg stopper i dag", showNext = "Næste tiende level", show60 = "Level 60", showBuffsWin = "XP-buffs",
+    showMinimap = "Minimap-knap", onBar = "På baren", showStats = "Tal under baren",
+    showBuffsBar = "XP-buffs på baren", setGoal = "Sæt mål",
   },
 }
 local function T(k) return (LOC[(DB and DB.lang) or "en"] or LOC.en)[k] end
@@ -94,6 +102,8 @@ local defaults = {
   showTimes = false, timesCount = 10,
   showBar = false, hideBlizz = false, barScale = 1, questRewards = {},
   showAct = true, act = {}, goalOn = false, goalLevel = 60,
+  showToday = true, showNext = true, show60 = true, showBuffsWin = true, showMinimap = true,
+  showStats = true, showBuffsBar = true, tab = 1,
 }
 
 -- ---------- tid og datoer ----------
@@ -773,6 +783,7 @@ for i = 1, 4 do
   if i > 1 then
     local sep = bar:CreateTexture(nil, "ARTWORK"); sep:SetColorTexture(1, 1, 1, 0.06)
     sep:SetSize(1, 32); sep:SetPoint("TOPLEFT", x - 10, -52)
+    c.sep = sep
   end
   cols[i] = c
 end
@@ -819,9 +830,17 @@ local function restedPct(mx)
   return string.format("%.1f%%", p)
 end
 
+local barH = 96
 local function updateBar(r, head)
   if not DB.showBar or UnitLevel("player") >= MAXLVL then bar:Hide(); return end
   bar:SetScale(DB.barScale); bar:Show()
+  barH = DB.showStats and 96 or 50
+  bar:SetHeight(barH)
+  for _, c in ipairs(cols) do
+    c.label:SetShown(DB.showStats); c.value:SetShown(DB.showStats)
+    if not DB.showStats then c.dot:Hide() end
+    if c.sep then c.sep:SetShown(DB.showStats) end
+  end
   local lvl, xp, mx = UnitLevel("player"), UnitXP("player"), UnitXPMax("player")
   if not mx or mx <= 0 then return end
   bLevel:SetText(T("level") .. " " .. lvl)
@@ -830,7 +849,8 @@ local function updateBar(r, head)
   local q = math.min(questXP(), mx - xp)
   local rs = math.min(restedXP(), math.max(0, mx - xp - q))
   setSeg(segCur, 0, xp / mx); setSeg(segQuest, xp / mx, (xp + q) / mx); setSeg(segRest, (xp + q) / mx, (xp + q + rs) / mx)
-  placeChips(bar, barChips, activeBuffs(), 14 + 18 + 6 + (bLevel:GetStringWidth() or 60) + 14, -18)
+  placeChips(bar, barChips, DB.showBuffsBar and activeBuffs() or {}, 14 + 18 + 6 + (bLevel:GetStringWidth() or 60) + 14, -18)
+  if not DB.showStats then return end
 
   local xph = liveXPh() or (r * 3600)
   setCol(1, "xph", kfmt(xph), 0.91, 0.92, 0.94)
@@ -1032,6 +1052,10 @@ local lastGoal
 local function updateActivity(rL, head)
   if not DB.showAct then box:Hide(); return end
   box:Show()
+  box:SetHeight(barH)
+  if barH >= 90 then VH = 56; vt:SetPoint("TOP", box, "TOP", 0, -14); vtext:Show()
+  else VH = barH - 22; vt:SetPoint("TOP", box, "TOP", 0, -11); vtext:Hide() end
+  vt:SetHeight(VH)
   local v = DB.actEma or 0.6
   local g = goalInfo(rL, head)
   lastGoal = g
@@ -1096,7 +1120,10 @@ box:SetScript("OnLeave", function() GameTooltip:Hide() end)
 -- de tre faste raekker
 local function mainRows(y)
   local lvl = UnitLevel("player")
-  if lvl >= MAXLVL then return setRow(rows[1], y, T("done"), "", nil, true) end
+  if lvl >= MAXLVL then
+    if DB.showToday or DB.showNext or DB.show60 then return setRow(rows[1], y, T("done"), "", nil, true) end
+    return y
+  end
 
   local r = shortRate()
   local rL = longRate()
@@ -1104,7 +1131,7 @@ local function mainRows(y)
   local list = {}
 
   -- level ved sengetid, med bjaelke for hvor langt inde i levelet
-  if DB.schedule and DB.sleepStart ~= DB.sleepEnd then
+  if DB.showToday and DB.schedule and DB.sleepStart ~= DB.sleepEnd then
     local d = date("*t")
     local nowMin = d.hour * 60 + d.min
     d.hour, d.min, d.sec = math.floor(DB.sleepStart / 60), DB.sleepStart % 60, 0
@@ -1121,10 +1148,12 @@ local function mainRows(y)
   end
   -- naeste tiende level og level 60
   local mile = (math.floor(lvl / 10) + 1) * 10
-  if mile < MAXLVL then
+  if DB.showNext and mile < MAXLVL then
     list[#list + 1] = {T("level") .. " " .. mile, "|cffe8eaf0" .. nice(eta(timeTo(mile, rL, head), rL), 15) .. "|r"}
   end
-  list[#list + 1] = {T("level") .. " 60", "|cffffd24a" .. nice(eta(timeTo(MAXLVL, rL, head), rL), 30) .. "|r"}
+  if DB.show60 then
+    list[#list + 1] = {T("level") .. " 60", "|cffffd24a" .. nice(eta(timeTo(MAXLVL, rL, head), rL), 30) .. "|r"}
+  end
 
   for i, it in ipairs(list) do y = setRow(rows[i], y, it[1], it[2], it[3], i == #list) end
   return y, r, head, rL
@@ -1137,7 +1166,7 @@ local function refresh()
   updateLabels()
   for _, c in ipairs(rows) do c:Hide() end
   local y, r, head, rL = mainRows(-44)
-  local list = activeBuffs()
+  local list = DB.showBuffsWin and activeBuffs() or {}
   if #list > 0 then
     placeChips(f, winChips, list, 14, y - 12); y = y - 22
   else
@@ -1145,16 +1174,21 @@ local function refresh()
   end
   if DB.showTimes then y = drawTimes(y) else hideTimes() end
   f:SetHeight(-y + 10)
+  f:SetShown(not DB.hidden and y < -44)  -- intet at vise: skjul vinduet helt
+  if LevelETAMinimapButton then LevelETAMinimapButton:SetShown(DB.showMinimap) end
   r = r or shortRate()
   head = head or headStart(r)
   updateBar(r, head)
   if bar:IsShown() then updateActivity(rL or longRate(), head) end
 end
 
+-- indstillinger og maal-vindue i egen blok (Lua tillader kun 200 lokale variabler i filen)
+local S, controls, toggleSettings, toggleWindow, toggleGoal
+do
 -- ---------- indstillinger ----------
 local SW, COL = 520, 260
-local S = CreateFrame("Frame", "LevelETASettings", UIParent)
-S:SetSize(SW, 566); S:SetPoint("CENTER"); S:SetFrameStrata("DIALOG"); S:Hide()
+S = CreateFrame("Frame", "LevelETASettings", UIParent)
+S:SetSize(SW, 446); S:SetPoint("CENTER"); S:SetFrameStrata("DIALOG"); S:Hide()
 skin(S, "Wide", 1040, 2048)
 movable(S, function() return true end)
 S:SetScript("OnDragStop", S.StopMovingOrSizing)
@@ -1169,7 +1203,7 @@ closeX:SetScript("OnEnter", function() closeT:SetTextColor(1, 1, 1) end)
 closeX:SetScript("OnLeave", function() closeT:SetTextColor(0.55, 0.58, 0.64) end)
 closeX:SetScript("OnClick", function() S:Hide() end)
 
-local controls = {}
+controls = {}
 local colX = 0
 local host, hostControls = S, controls  -- hvilket vindue byggeklodserne tegner paa
 
@@ -1229,6 +1263,7 @@ local function pill(text, w)
   local b = CreateFrame("Button", nil, host)
   b:SetSize(w, 24)
   local bg = b:CreateTexture(nil, "BACKGROUND"); bg:SetAllPoints(); bg:SetTexture(TEX .. "Pill"); bg:SetTexCoord(0, 240 / 256, 0, 48 / 64)
+  b.bg = bg
   b.text = fs(b, F_SEMI, 12); b.text:SetPoint("CENTER"); b.text:SetTextColor(0.85, 0.87, 0.92)
   b:SetScript("OnEnter", function() b.text:SetTextColor(1, 0.82, 0.4) end)
   b:SetScript("OnLeave", function() b.text:SetTextColor(0.85, 0.87, 0.92) end)
@@ -1237,47 +1272,91 @@ end
 
 local clockFmt = function(v) return hhmm(v) end
 
--- venstre kolonne: doegnrytme
-colX = 0
-section(-50, "rhythm")
-toggle(-72, "useRhythm", function() return DB.schedule end, function(v) DB.schedule = v end)
-slider(-104, "wake", 0, 1410, 30, function() return DB.sleepEnd end, function(v) DB.sleepEnd = v end, clockFmt)
-slider(-150, "bed", 0, 1410, 30, function() return DB.sleepStart end, function(v) DB.sleepStart = v end, clockFmt)
-slider(-196, "breakAt", 0, 1410, 30, function() return DB.breakStart end, function(v) DB.breakStart = v end, clockFmt)
-slider(-242, "breakLen", 0, 180, 15, function() return DB.breakLen end, function(v) DB.breakLen = v end,
-  function(v) return v == 0 and T("none") or (v .. " " .. T("min")) end)
-section(-294, "barHead")
-toggle(-316, "showBar", function() return DB.showBar end, function(v) DB.showBar = v end)
-toggle(-344, "hideBlizz", function() return DB.hideBlizz end, function(v) DB.hideBlizz = v; applyBlizz() end)
-toggle(-372, "showAct", function() return DB.showAct end, function(v) DB.showAct = v end)
-slider(-404, "barSize", 0.6, 2.0, 0.05, function() return DB.barScale end, function(v) DB.barScale = v end,
-  function(v) return string.format("%d%%", math.floor(v * 100 + 0.5)) end)
+-- faner: Vindue, XP-bar, Spilletid
+local TABS = {"tabWindow", "tabBar", "tabTime"}
+local pages, tabBtns = {}, {}
+local function paintTabs()
+  for k, b in ipairs(tabBtns) do
+    local on = k == (DB and DB.tab or 1)
+    b.text:SetTextColor(on and 1 or 0.55, on and 0.82 or 0.58, on and 0.4 or 0.64)
+    b.bg:SetAlpha(on and 1 or 0.45)
+  end
+end
+local function showTab(i)
+  DB.tab = i
+  for k, p in ipairs(pages) do p:SetShown(k == i) end
+  paintTabs()
+end
+local TBW = (SW - 36 - 16) / 3
+for i, key in ipairs(TABS) do
+  local b = pill("", TBW); b:SetPoint("TOPLEFT", 18 + (i - 1) * (TBW + 8), -48); label(b.text, key)
+  b:SetScript("OnClick", function() showTab(i) end)
+  b:SetScript("OnLeave", paintTabs)
+  tabBtns[i] = b
+  local pg = CreateFrame("Frame", nil, S); pg:SetAllPoints(S); pg:Hide()
+  pages[i] = pg
+end
+local pctFmt = function(v) return string.format("%d%%", math.floor(v * 100 + 0.5)) end
 
--- hoejre kolonne: visning, quests og rested
+-- fane 1: vinduet
+host = pages[1]
+colX = 0
+section(-92, "winSec")
+toggle(-114, "showWin", function() return not DB.hidden end, function(v) DB.hidden = not v; f:SetShown(v) end)
+toggle(-142, "lock", function() return DB.locked end, function(v) DB.locked = v end)
+toggle(-170, "showMinimap", function() return DB.showMinimap end, function(v) DB.showMinimap = v end)
+slider(-202, "size", 0.6, 2.0, 0.05, function() return DB.scale end, function(v) DB.scale = v end, pctFmt)
 colX = COL
-section(-50, "display")
-toggle(-72, "showWin", function() return not DB.hidden end, function(v) DB.hidden = not v; f:SetShown(v) end)
-toggle(-100, "lock", function() return DB.locked end, function(v) DB.locked = v end)
-slider(-132, "size", 0.6, 2.0, 0.05, function() return DB.scale end, function(v) DB.scale = v end,
-  function(v) return string.format("%d%%", math.floor(v * 100 + 0.5)) end)
-section(-184, "timesHead")
-toggle(-206, "showTimes", function() return DB.showTimes end, function(v) DB.showTimes = v end)
-slider(-238, "timesCount", 3, 30, 1, function() return DB.timesCount end, function(v) DB.timesCount = v end,
+section(-92, "rowsSec")
+toggle(-114, "showToday", function() return DB.showToday end, function(v) DB.showToday = v end)
+toggle(-142, "showNext", function() return DB.showNext end, function(v) DB.showNext = v end)
+toggle(-170, "show60", function() return DB.show60 end, function(v) DB.show60 = v end)
+toggle(-198, "showBuffsWin", function() return DB.showBuffsWin end, function(v) DB.showBuffsWin = v end)
+section(-236, "timesHead")
+toggle(-258, "showTimes", function() return DB.showTimes end, function(v) DB.showTimes = v end)
+slider(-290, "timesCount", 3, 30, 1, function() return DB.timesCount end, function(v) DB.timesCount = v end,
   function(v) return tostring(v) end)
-section(-290, "questSec")
-slider(-314, "qBuf", 0, 100, 5, function() return DB.questBuffer end, function(v) DB.questBuffer = v end,
+
+-- fane 2: XP-bar
+host = pages[2]
+colX = 0
+section(-92, "barHead")
+toggle(-114, "showBar", function() return DB.showBar end, function(v) DB.showBar = v end)
+toggle(-142, "hideBlizz", function() return DB.hideBlizz end, function(v) DB.hideBlizz = v; applyBlizz() end)
+slider(-174, "barSize", 0.6, 2.0, 0.05, function() return DB.barScale end, function(v) DB.barScale = v end, pctFmt)
+colX = COL
+section(-92, "onBar")
+toggle(-114, "showStats", function() return DB.showStats end, function(v) DB.showStats = v end)
+toggle(-142, "showBuffsBar", function() return DB.showBuffsBar end, function(v) DB.showBuffsBar = v end)
+toggle(-170, "showAct", function() return DB.showAct end, function(v) DB.showAct = v end)
+local goalBtn = pill("", 120); goalBtn:SetPoint("TOPLEFT", COL + 18, -206); label(goalBtn.text, "setGoal")
+
+-- fane 3: spilletid, quests og rested
+host = pages[3]
+colX = 0
+section(-92, "rhythm")
+toggle(-114, "useRhythm", function() return DB.schedule end, function(v) DB.schedule = v end)
+slider(-146, "wake", 0, 1410, 30, function() return DB.sleepEnd end, function(v) DB.sleepEnd = v end, clockFmt)
+slider(-192, "bed", 0, 1410, 30, function() return DB.sleepStart end, function(v) DB.sleepStart = v end, clockFmt)
+slider(-238, "breakAt", 0, 1410, 30, function() return DB.breakStart end, function(v) DB.breakStart = v end, clockFmt)
+slider(-284, "breakLen", 0, 180, 15, function() return DB.breakLen end, function(v) DB.breakLen = v end,
+  function(v) return v == 0 and T("none") or (v .. " " .. T("min")) end)
+colX = COL
+section(-92, "questSec")
+slider(-116, "qBuf", 0, 100, 5, function() return DB.questBuffer end, function(v) DB.questBuffer = v end,
   function(v) return string.format("-%d%%", v) end)
-toggle(-360, "inn", function() return DB.inn end, function(v) DB.inn = v end)
+toggle(-162, "inn", function() return DB.inn end, function(v) DB.inn = v end)
+host = S
 
 -- info: virker alene og sammen med ForeverXP Bar
 local infoLine = S:CreateTexture(nil, "ARTWORK")
-infoLine:SetPoint("TOPLEFT", 18, -456); infoLine:SetPoint("TOPRIGHT", -18, -456); infoLine:SetHeight(1)
+infoLine:SetPoint("TOPLEFT", 18, -342); infoLine:SetPoint("TOPRIGHT", -18, -342); infoLine:SetHeight(1)
 infoLine:SetColorTexture(1, 1, 1, 0.06)
-local infoText = fs(S, F_SEMI, 11); infoText:SetPoint("TOPLEFT", 18, -468); infoText:SetTextColor(0.55, 0.58, 0.64)
+local infoText = fs(S, F_SEMI, 11); infoText:SetPoint("TOPLEFT", 18, -354); infoText:SetTextColor(0.55, 0.58, 0.64)
 label(infoText, "standalone")
 local fxbDot = S:CreateTexture(nil, "ARTWORK")
-fxbDot:SetSize(7, 7); fxbDot:SetPoint("TOPLEFT", 19, -488); fxbDot:SetTexture(TEX .. "Dot")
-local fxbText = fs(S, F_SEMI, 11); fxbText:SetPoint("TOPLEFT", 32, -486)
+fxbDot:SetSize(7, 7); fxbDot:SetPoint("TOPLEFT", 19, -374); fxbDot:SetTexture(TEX .. "Dot")
+local fxbText = fs(S, F_SEMI, 11); fxbText:SetPoint("TOPLEFT", 32, -372)
 
 -- knapper i bunden
 local langBtn = pill("", 140); langBtn:SetPoint("BOTTOMLEFT", 18, 16); label(langBtn.text, "language")
@@ -1343,10 +1422,9 @@ G:SetScript("OnUpdate", function(_, el)
   gAcc = gAcc + el
   if gAcc > 0.2 then gAcc = 0; paintGoalSummary() end
 end)
-local function toggleGoal() G:SetShown(not G:IsShown()) end
+toggleGoal = function() G:SetShown(not G:IsShown()) end
 box:SetScript("OnClick", toggleGoal)
 
-local goalBtn = pill("", 80); goalBtn:SetPoint("LEFT", resetBtn, "RIGHT", 10, 0); label(goalBtn.text, "goalBtn")
 goalBtn:SetScript("OnClick", toggleGoal)
 
 S:SetScript("OnShow", function()
@@ -1357,13 +1435,15 @@ S:SetScript("OnShow", function()
     fxbDot:SetVertexColor(0.54, 0.56, 0.6); fxbText:SetText(T("fxbMissing")); fxbText:SetTextColor(0.55, 0.58, 0.64)
   end
   for _, c in ipairs(controls) do c.load() end
+  showTab(DB.tab or 1)
 end)
 
-local function toggleSettings() S:SetShown(not S:IsShown()) end
-local function toggleWindow()
+toggleSettings = function() S:SetShown(not S:IsShown()) end
+toggleWindow = function()
   DB.hidden = f:IsShown()
   f:SetShown(not DB.hidden)
   if S:IsShown() then for _, c in ipairs(controls) do c.load() end end
+end
 end
 
 -- ---------- minimap-knap ----------
@@ -1480,6 +1560,7 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
     if DB.point then self:SetPoint(DB.point[1], UIParent, DB.point[2], DB.point[3], DB.point[4])
     else self:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -220, -200) end
     if DB.hidden then self:Hide() end
+    if LevelETAMinimapButton then LevelETAMinimapButton:SetShown(DB.showMinimap) end
     bar:ClearAllPoints()
     if DB.barPoint then bar:SetPoint(DB.barPoint[1], UIParent, DB.barPoint[2], DB.barPoint[3], DB.barPoint[4])
     else bar:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 150) end

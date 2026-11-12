@@ -7,7 +7,7 @@
 - **An XP bar and XP tracker** (optional): XP per hour, time to next level, quest XP, rested XP and XP buffs
 - **Optional extras:** your level times and an activity bar with a goal
 
-It learns how fast you level and knows when you play. Works on its own, and uses ForeverXP Bar data if you have it.
+It learns how fast you level and knows when you play. **Every part can be turned on or off**, so you can use only what you want, for example just the XP bar or just the level times. Works on its own, and uses ForeverXP Bar data if you have it.
 
 ![LevelETA window](screenshots/window.png)
 
@@ -83,21 +83,15 @@ Right click the minimap button, or type `/lp`.
 
 ![LevelETA settings](screenshots/settings.png)
 
-| Setting | What it does |
+The settings are split into three tabs. Every part of LevelETA can be turned on or off on its own.
+
+| Tab | Settings |
 |---|---|
-| **Use my play times** | Turn the play schedule on or off |
-| **Play from / Play until** | When you usually play each day |
-| **Break starts / Break length** | An optional daily break. Short breaks while logged in are already counted, so most players can leave this at *none* |
-| **Show window / Lock window / Size** | Display options |
-| **Show level times** | Show how long each of your last levels took (off by default) |
-| **Levels in the list** | How many levels the level times list shows (3 to 30, default 10) |
-| **Show XP bar / Hide Blizzard's XP bar / Bar size** | The optional XP bar (off by default) |
-| **Show activity bar** | The small activity bar next to the XP bar |
-| **Goal** | Target level and deadline for the activity bar |
-| **Quest buffer** | How much of your ready quest XP to ignore (default 25 %) |
-| **Rested XP while logged out** | Count rested XP gained while logged out in an inn |
-| **Language** | English or Danish |
-| **Reset pace** | Start measuring your current pace from scratch |
+| **Window** | Show window, lock window, minimap button, size. Choose which rows to show: *level when I stop today*, *next tenth level*, *level 60* and *XP buffs*. Level times on or off, and how many levels the list shows (3 to 30) |
+| **XP bar** | Show XP bar, hide Blizzard's XP bar, bar size. Numbers under the bar, XP buffs on the bar and the activity bar, each on or off. Set goal |
+| **Play time** | Use my play times, play from, play until, an optional daily break. Quest buffer (how much ready quest XP to ignore, default 25 %) and rested XP while logged out |
+
+At the bottom: **Language** (English or Danish) and **Reset pace** (start measuring your current pace from scratch).
 
 ## Commands
 
@@ -113,7 +107,7 @@ Left click the minimap button to show or hide the window.
 
 LevelETA viser, hvilket level du er på, når du stopper med at spille i dag, hvornår du rammer dit næste tiende level, og hvornår du rammer level 60.
 
-Den virker helt alene og bruger `/played` og sine egne målinger. Er ForeverXP Bar installeret, bruger den også dens levelhistorik, så den er præcis fra første dag. Indstillinger: højreklik på minimap-knappen eller skriv `/lp`. Sproget kan skiftes til dansk i indstillingerne. Under Visning kan du slå level-tider til og se, hvor lang tid dine sidste levels tog. Du vælger selv, hvor mange levels listen viser. Under XP-bar kan du slå en XP-bar til i samme stil og skjule Blizzards egen. Ved siden af baren viser en lille bjælke, hvor aktiv du er. Klik på den for at sætte et mål, så viser en hvid streg, hvor aktiv du skal være for at nå det.
+Den virker helt alene og bruger `/played` og sine egne målinger. Er ForeverXP Bar installeret, bruger den også dens levelhistorik, så den er præcis fra første dag. Indstillinger: højreklik på minimap-knappen eller skriv `/lp`. Sproget kan skiftes til dansk i indstillingerne, og alle dele kan slås til og fra hver for sig. Under fanen Vindue kan du slå level-tider til og se, hvor lang tid dine sidste levels tog. Du vælger selv, hvor mange levels listen viser. Under fanen XP-bar kan du slå en XP-bar til i samme stil og skjule Blizzards egen. Ved siden af baren viser en lille bjælke, hvor aktiv du er. Klik på den for at sætte et mål, så viser en hvid streg, hvor aktiv du skal være for at nå det.
 
 ---
 
