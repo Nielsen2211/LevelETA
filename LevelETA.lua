@@ -100,7 +100,7 @@ local defaults = {
   schedule = true, sleepStart = 23 * 60, sleepEnd = 7 * 60, breakStart = 12 * 60, breakLen = 0,
   questBuffer = 25, inn = true, scale = 1, lang = "en", locked = false, hidden = false, mmAngle = 200,
   showTimes = false, timesCount = 10,
-  showBar = false, hideBlizz = false, barScale = 1, questRewards = {},
+  showBar = true, hideBlizz = true, barScale = 1, questRewards = {},
   showAct = true, act = {}, goalOn = false, goalLevel = 60,
   showToday = true, showNext = true, show60 = true, showBuffsWin = true, showMinimap = true,
   showStats = true, showBuffsBar = true, tab = 1,
@@ -1556,6 +1556,7 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
     for k, v in pairs(defaults) do if DB[k] == nil then DB[k] = v end end
     if not DB.sessionStart then DB.sessionStart = DB.play end
     if DB.calcVer ~= 7 then DB.eS, DB.eL, DB.calcVer = nil, nil, 7 end  -- smid gamle udglattede tempi ud
+    if (DB.defVer or 0) < 2 then DB.showBar, DB.hideBlizz, DB.defVer = true, true, 2 end  -- XP-baren er nu slaaet til som standard
     self:ClearAllPoints()
     if DB.point then self:SetPoint(DB.point[1], UIParent, DB.point[2], DB.point[3], DB.point[4])
     else self:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -220, -200) end

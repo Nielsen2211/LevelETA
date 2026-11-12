@@ -4,7 +4,7 @@
 
 - **When you hit your next tenth level and level 60**, as real dates like *Friday 18:30*
 - **What level you will be when you stop playing today**
-- **An XP bar and XP tracker** (optional): XP per hour, time to next level, quest XP, rested XP and XP buffs
+- **An XP bar and XP tracker**: XP per hour, time to next level, quest XP, rested XP and XP buffs
 - **Optional extras:** your level times and an activity bar with a goal
 
 It learns how fast you level and knows when you play. **Every part can be turned on or off**, so you can use only what you want, for example just the XP bar or just the level times. Works on its own, and uses ForeverXP Bar data if you have it.
@@ -31,9 +31,9 @@ Turn on **Show level times** in the settings to see how long each of your last l
 
 ![LevelETA level times](screenshots/level-times.png)
 
-### XP bar and XP tracker (optional)
+### XP bar and XP tracker
 
-Turn on **Show XP bar** in the settings for an XP bar and XP tracker in the same style. It shows your XP, completed quests you have not turned in (gold) and your rested XP (light blue), with XP per hour, time to next level, ready quest XP and rested XP in percent below the bar. Active XP buffs (food and the Cozy Sleeping Bag) are shown with the time they have left. Hover the bar for kills and quests to level and stats for this session. You can also hide Blizzard's own XP bar. It is off by default.
+LevelETA comes with an XP bar and XP tracker in the same style. It shows your XP, completed quests you have not turned in (gold) and your rested XP (light blue), with XP per hour, time to next level, ready quest XP and rested XP in percent below the bar. Active XP buffs (food and the Cozy Sleeping Bag) are shown with the time they have left. Hover the bar for kills and quests to level and stats for this session. The bar is shown at the top of the screen by default and replaces Blizzard's own XP bar. You can move it, turn it off, or show Blizzard's bar again in the settings.
 
 ![LevelETA XP bar and activity bar](screenshots/xp-bar.png)
 
