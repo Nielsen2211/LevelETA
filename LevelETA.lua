@@ -54,6 +54,7 @@ local LOC = {
     showToday = "Level when I stop today", showNext = "Next tenth level", show60 = "Level 60", showBuffsWin = "XP buffs",
     showMinimap = "Minimap button", onBar = "On the bar", showStats = "Numbers under the bar",
     showBuffsBar = "XP buffs on the bar", setGoal = "Set goal",
+    xphShort = "XP/h", spent = "This level", left = "Next", questsShort = "Quests",
   },
   da = {
     level = "Level", today = "I dag kl. %s", tomorrow = "I morgen kl. %s",
@@ -88,6 +89,7 @@ local LOC = {
     showToday = "Level når jeg stopper i dag", showNext = "Næste tiende level", show60 = "Level 60", showBuffsWin = "XP-buffs",
     showMinimap = "Minimap-knap", onBar = "På baren", showStats = "Tal under baren",
     showBuffsBar = "XP-buffs på baren", setGoal = "Sæt mål",
+    xphShort = "XP/t", spent = "Brugt", left = "Tilbage", questsShort = "Quests",
   },
 }
 local function T(k) return (LOC[(DB and DB.lang) or "en"] or LOC.en)[k] end
@@ -696,21 +698,22 @@ local function activeBuffs()
   return list
 end
 
-local function placeChips(parent, store, list, x, y)
+local function placeChips(parent, store, list, x, y, small)
+  local isz, fsz = small and 12 or 14, small and 10 or 11
   for i, b in ipairs(list) do
     local c = store[i]
     if not c then
       c = CreateFrame("Frame", nil, parent); c:SetHeight(16)
-      c.icon = c:CreateTexture(nil, "ARTWORK"); c.icon:SetSize(14, 14); c.icon:SetPoint("LEFT")
+      c.icon = c:CreateTexture(nil, "ARTWORK"); c.icon:SetSize(isz, isz); c.icon:SetPoint("LEFT")
       c.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-      c.pct = fs(c, F_BOLD, 11); c.pct:SetPoint("LEFT", c.icon, "RIGHT", 5, 0); c.pct:SetTextColor(0.62, 0.82, 1)
-      c.time = fs(c, F_SEMI, 11); c.time:SetPoint("LEFT", c.pct, "RIGHT", 4, 0); c.time:SetTextColor(0.55, 0.58, 0.64)
+      c.pct = fs(c, F_BOLD, fsz); c.pct:SetPoint("LEFT", c.icon, "RIGHT", 4, 0); c.pct:SetTextColor(0.62, 0.82, 1)
+      c.time = fs(c, F_SEMI, fsz); c.time:SetPoint("LEFT", c.pct, "RIGHT", 3, 0); c.time:SetTextColor(0.55, 0.58, 0.64)
       store[i] = c
     end
     c.icon:SetTexture(b.icon); c.pct:SetText(b.pct); c.time:SetText(dur(b.left))
-    local w = 14 + 5 + (c.pct:GetStringWidth() or 0) + 4 + (c.time:GetStringWidth() or 0)
+    local w = isz + 4 + (c.pct:GetStringWidth() or 0) + 3 + (c.time:GetStringWidth() or 0)
     c:SetWidth(w); c:ClearAllPoints(); c:SetPoint("LEFT", parent, "TOPLEFT", x, y); c:Show()
-    x = x + w + 14
+    x = x + w + (small and 10 or 14)
   end
   for i = #list + 1, #store do store[i]:Hide() end
 end
@@ -719,7 +722,7 @@ local winChips = {}
 -- ---------- XP-bar ----------
 local BW = 460
 local bar = CreateFrame("Frame", "LevelETABar", UIParent)
-bar:SetSize(BW, 96); bar:Hide()
+bar:SetSize(BW, 60); bar:Hide()
 skin(bar, "Bar", 920, 1024)
 movable(bar, function() return not DB.locked end)
 bar:SetScript("OnDragStop", function(self)
@@ -728,16 +731,17 @@ bar:SetScript("OnDragStop", function(self)
   DB.barPoint = {p, rp, x, y}
 end)
 
-local bLogo = bar:CreateTexture(nil, "ARTWORK"); bLogo:SetSize(18, 18); bLogo:SetPoint("LEFT", bar, "TOPLEFT", 14, -18); bLogo:SetTexture(LOGO)
-local bLevel = fs(bar, F_BOLD, 14); bLevel:SetPoint("LEFT", bLogo, "RIGHT", 6, 0)
-local bPct = fs(bar, F_BOLD, 14); bPct:SetPoint("RIGHT", bar, "TOPRIGHT", -14, -18); bPct:SetTextColor(0.62, 0.82, 1)
-local bXP = fs(bar, F_SEMI, 11); bXP:SetPoint("RIGHT", bPct, "LEFT", -10, 0); bXP:SetTextColor(0.36, 0.38, 0.44)
+-- oeverste linje: logo, level, buffs ... XP-tal, procent
+local bLogo = bar:CreateTexture(nil, "ARTWORK"); bLogo:SetSize(15, 15); bLogo:SetPoint("LEFT", bar, "TOPLEFT", 12, -14); bLogo:SetTexture(LOGO)
+local bLevel = fs(bar, F_BOLD, 12.5); bLevel:SetPoint("LEFT", bLogo, "RIGHT", 5, 0)
+local bPct = fs(bar, F_BOLD, 12.5); bPct:SetPoint("RIGHT", bar, "TOPRIGHT", -12, -14); bPct:SetTextColor(0.62, 0.82, 1)
+local bXP = fs(bar, F_SEMI, 10); bXP:SetPoint("RIGHT", bPct, "LEFT", -8, 0); bXP:SetTextColor(0.36, 0.38, 0.44)
 local barChips = {}
 
 -- bjaelken: baggrund, nuvaerende XP (blaa), quests klar (guld), rested (lyseblaa), afrundet med en maske
 local track = CreateFrame("Frame", nil, bar)
-track:SetPoint("TOPLEFT", 14, -30); track:SetPoint("TOPRIGHT", -14, -30); track:SetHeight(16)
-local TRW = BW - 28
+track:SetPoint("TOPLEFT", 12, -24); track:SetPoint("TOPRIGHT", -12, -24); track:SetHeight(14)
+local TRW = BW - 24
 local mask
 if track.CreateMaskTexture then
   mask = track:CreateMaskTexture()
@@ -759,7 +763,7 @@ local segQuest = barTex("ARTWORK", 2, 1, 0.82, 0.29, 0.8)
 local segRest = barTex("ARTWORK", 1, 0.62, 0.82, 1, 0.43)
 for i = 1, 9 do
   local t = track:CreateTexture(nil, "OVERLAY")
-  t:SetColorTexture(0, 0, 0, 0.18); t:SetSize(1, 10)
+  t:SetColorTexture(0, 0, 0, 0.18); t:SetSize(1, 8)
   t:SetPoint("CENTER", track, "LEFT", TRW * i / 10, 0)
 end
 local function setSeg(t, from, to)
@@ -769,34 +773,44 @@ local function setSeg(t, from, to)
   t:SetPoint("LEFT", track, "LEFT", TRW * from, 0); t:SetWidth(TRW * (to - from)); t:Show()
 end
 
--- fire tal under bjaelken
-local cols = {}
-local CW = (BW - 28) / 4
-for i = 1, 4 do
-  local x = 14 + CW * (i - 1)
+-- tallene under bjaelken paa een linje: navn lige foran tallet, fordelt over hele bredden
+local STAT_Y = -49
+local stats = {}
+for i = 1, 5 do
   local c = {}
-  c.dot = bar:CreateTexture(nil, "ARTWORK"); c.dot:SetSize(6, 6); c.dot:SetTexture(TEX .. "Dot")
-  c.dot:SetPoint("LEFT", bar, "TOPLEFT", x, -60)
+  c.dot = bar:CreateTexture(nil, "ARTWORK"); c.dot:SetSize(5, 5); c.dot:SetTexture(TEX .. "Dot")
   c.label = fs(bar, F_SEMI, 9.5); c.label:SetTextColor(0.55, 0.58, 0.64)
-  c.value = fs(bar, F_BOLD, 13); c.value:SetPoint("LEFT", bar, "TOPLEFT", x, -77)
-  c.x = x
-  if i > 1 then
-    local sep = bar:CreateTexture(nil, "ARTWORK"); sep:SetColorTexture(1, 1, 1, 0.06)
-    sep:SetSize(1, 30); sep:SetPoint("TOPLEFT", x - 10, -54)
-    c.sep = sep
-  end
-  cols[i] = c
+  c.value = fs(bar, F_BOLD, 11)
+  stats[i] = c
 end
-local function setCol(i, labelKey, value, r, g, b, dot)
-  local c = cols[i]
-  c.label:SetText(T(labelKey)); c.value:SetText(value); c.value:SetTextColor(r, g, b)
-  c.label:ClearAllPoints()
-  if dot then
-    c.dot:SetVertexColor(dot[1], dot[2], dot[3]); c.dot:Show()
-    c.label:SetPoint("LEFT", bar, "TOPLEFT", c.x + 10, -60)
-  else
-    c.dot:Hide(); c.label:SetPoint("LEFT", bar, "TOPLEFT", c.x, -60)
+local function layoutStats(items)
+  local widths, total = {}, 0
+  for i, it in ipairs(items) do
+    local c = stats[i]
+    c.label:SetText(T(it[1])); c.value:SetText(it[2]); c.value:SetTextColor(it[3], it[4], it[5])
+    local w = (it[6] and 8 or 0) + (c.label:GetStringWidth() or 40) + 4 + (c.value:GetStringWidth() or 36)
+    widths[i] = w; total = total + w
   end
+  local gap = #items > 1 and math.max(6, (TRW - total) / (#items - 1)) or 0
+  local x = 12
+  for i, it in ipairs(items) do
+    local c = stats[i]
+    c.dot:ClearAllPoints(); c.label:ClearAllPoints(); c.value:ClearAllPoints()
+    local lx = x
+    if it[6] then
+      c.dot:SetVertexColor(it[6][1], it[6][2], it[6][3]); c.dot:SetPoint("LEFT", bar, "TOPLEFT", x, STAT_Y); c.dot:Show()
+      lx = x + 8
+    else
+      c.dot:Hide()
+    end
+    c.label:SetPoint("LEFT", bar, "TOPLEFT", lx, STAT_Y); c.label:Show()
+    c.value:SetPoint("LEFT", c.label, "RIGHT", 4, 0); c.value:Show()
+    x = x + widths[i] + gap
+  end
+  for i = #items + 1, #stats do stats[i].dot:Hide(); stats[i].label:Hide(); stats[i].value:Hide() end
+end
+local function hideStats()
+  for _, c in ipairs(stats) do c.dot:Hide(); c.label:Hide(); c.value:Hide() end
 end
 
 local function kfmt(n)
@@ -813,11 +827,11 @@ end
 -- XP du rent faktisk har faaet pr. time de sidste 30 min (med rested og buffs), som ForeverXP Bar viser
 local function liveXPh()
   local winStart = DB.play - 1800
-  local sum, first = 0, nil
+  local sum = 0
   for i = #DB.samples, 1, -1 do
     local x = DB.samples[i]
     if x.p < winStart then break end
-    sum = sum + x.xp; first = x.p
+    sum = sum + x.xp
   end
   local span = math.min(1800, DB.play - (DB.sessionStart or 0))
   if span >= 120 and sum > 0 then return sum / span * 3600 end
@@ -830,17 +844,12 @@ local function restedPct(mx)
   return string.format("%.1f%%", p)
 end
 
-local barH = 96
+local barH = 60
 local function updateBar(r, head)
   if not DB.showBar or UnitLevel("player") >= MAXLVL then bar:Hide(); return end
   bar:SetScale(DB.barScale); bar:Show()
-  barH = DB.showStats and 96 or 56
+  barH = DB.showStats and 60 or 44
   bar:SetHeight(barH)
-  for _, c in ipairs(cols) do
-    c.label:SetShown(DB.showStats); c.value:SetShown(DB.showStats)
-    if not DB.showStats then c.dot:Hide() end
-    if c.sep then c.sep:SetShown(DB.showStats) end
-  end
   local lvl, xp, mx = UnitLevel("player"), UnitXP("player"), UnitXPMax("player")
   if not mx or mx <= 0 then return end
   bLevel:SetText(T("level") .. " " .. lvl)
@@ -849,14 +858,16 @@ local function updateBar(r, head)
   local q = math.min(questXP(), mx - xp)
   local rs = math.min(restedXP(), math.max(0, mx - xp - q))
   setSeg(segCur, 0, xp / mx); setSeg(segQuest, xp / mx, (xp + q) / mx); setSeg(segRest, (xp + q) / mx, (xp + q + rs) / mx)
-  placeChips(bar, barChips, DB.showBuffsBar and activeBuffs() or {}, 14 + 18 + 6 + (bLevel:GetStringWidth() or 60) + 14, -18)
-  if not DB.showStats then return end
+  placeChips(bar, barChips, DB.showBuffsBar and activeBuffs() or {}, 12 + 15 + 5 + (bLevel:GetStringWidth() or 55) + 12, -14, true)
+  if not DB.showStats then hideStats(); return end
 
-  local xph = liveXPh() or (r * 3600)
-  setCol(1, "xph", kfmt(xph), 0.91, 0.92, 0.94)
-  setCol(2, "nextLevel", dur(timeTo(lvl + 1, r, head)), 0.62, 0.82, 1)
-  setCol(3, "questsReady", "+" .. kfmt(questXP()), 1, 0.82, 0.29, {1, 0.82, 0.29})
-  setCol(4, "rested", restedPct(mx), 0.75, 0.88, 1, {0.62, 0.82, 1})
+  local items = {{"xphShort", kfmt(liveXPh() or (r * 3600)), 0.91, 0.92, 0.94}}
+  local spent = levelElapsed(fxbRecord())
+  if spent and spent > 0 then items[#items + 1] = {"spent", dur(spent), 0.91, 0.92, 0.94} end
+  items[#items + 1] = {"left", dur(timeTo(lvl + 1, r, head)), 0.62, 0.82, 1}
+  items[#items + 1] = {"questsShort", "+" .. kfmt(questXP()), 1, 0.82, 0.29, {1, 0.82, 0.29}}
+  items[#items + 1] = {"rested", restedPct(mx), 0.75, 0.88, 1, {0.62, 0.82, 1}}
+  layoutStats(items)
 end
 
 -- session: nulstilles ved ny login, ikke ved /reload
@@ -1021,8 +1032,8 @@ end
 -- ---------- den lille boks ved siden af XP-baren ----------
 local VH = 56
 local box = CreateFrame("Button", "LevelETAActivity", bar)
-box:SetSize(40, 96); box:SetPoint("TOPLEFT", bar, "TOPRIGHT", 6, 0)
-skin(box, "Side", 80, 128)
+box:SetSize(30, 60); box:SetPoint("TOPLEFT", bar, "TOPRIGHT", 6, 0)
+skin(box, "Side2", 60, 64)
 box:RegisterForClicks("LeftButtonUp")
 box:RegisterForDrag("LeftButton")
 box:SetScript("OnDragStart", function() if not DB.locked then bar:StartMoving() end end)
@@ -1053,9 +1064,8 @@ local function updateActivity(rL, head)
   if not DB.showAct then box:Hide(); return end
   box:Show()
   box:SetHeight(barH)
-  if barH >= 90 then VH = 56; vt:SetPoint("TOP", box, "TOP", 0, -14); vtext:Show()
-  else VH = barH - 22; vt:SetPoint("TOP", box, "TOP", 0, -11); vtext:Hide() end
-  vt:SetHeight(VH)
+  VH = barH - 20
+  vt:SetPoint("TOP", box, "TOP", 0, -10); vt:SetHeight(VH); vtext:Hide()
   local v = DB.actEma or 0.6
   local g = goalInfo(rL, head)
   lastGoal = g
