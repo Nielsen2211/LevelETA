@@ -609,6 +609,8 @@ local function levelElapsed(rec)
   if rec and type(rec.times[lvl]) == "number" and type(rec.elapsed) == "number" then return rec.elapsed - rec.times[lvl] end
 end
 
+local hideTimes, drawTimes
+do
 local tSep = f:CreateTexture(nil, "ARTWORK"); tSep:SetHeight(1); tSep:SetColorTexture(1, 1, 1, 0.06)
 local tHead = fs(f, F_BOLD, 11); tHead:SetTextColor(1, 0.82, 0.4); label(tHead, "timesHead")
 local tAvgLine = f:CreateTexture(nil, "ARTWORK"); tAvgLine:SetHeight(1); tAvgLine:SetColorTexture(1, 1, 1, 0.06)
@@ -628,7 +630,7 @@ local function timeRow(i)
   return c
 end
 
-local function hideTimes()
+hideTimes = function()
   tSep:Hide(); tHead:Hide(); tAvgLine:Hide()
   for _, c in ipairs(tRows) do c:Hide() end
 end
@@ -654,7 +656,7 @@ local function placeTime(i, y, title, value, frac, now)
   return y - h
 end
 
-local function drawTimes(y)
+drawTimes = function(y)
   y = y - 6
   tSep:ClearAllPoints(); tSep:SetPoint("TOPLEFT", 14, y); tSep:SetPoint("TOPRIGHT", -14, y); tSep:Show()
   y = y - 10
@@ -695,6 +697,8 @@ local function drawTimes(y)
   return y
 end
 
+end
+
 -- ---------- aktive XP-buffs som smaa "chips": ikon, procent, tid tilbage ----------
 local FOOD_ICON = "Interface\\Icons\\Spell_Misc_Food"
 local BAG_ICON = "Interface\\Icons\\INV_Drink_15"
@@ -705,13 +709,49 @@ local function bagSoon() return (DB.bagWarn or 5) * 60 end
 local function activeBuffs()
   local list = {}
   local f, b = fedLeft(), bagLeft()
-  if f > 0 then list[#list + 1] = {icon = buffs.fedIcon or FOOD_ICON, pct = "+5%", left = f, soon = f <= foodSoon()} end
-  if b > 0 then list[#list + 1] = {icon = buffs.bagIcon or BAG_ICON, pct = "+" .. (buffs.bagStacks or 1) .. "%", left = b, soon = b <= bagSoon()} end
+  if f > 0 then list[#list + 1] = {icon = buffs.fedIcon or FOOD_ICON, pct = "+5%", left = f, untilT = buffs.fedUntil, warn = foodSoon} end
+  if b > 0 then list[#list + 1] = {icon = buffs.bagIcon or BAG_ICON, pct = "+" .. (buffs.bagStacks or 1) .. "%", left = b, untilT = buffs.bagUntil, warn = bagSoon} end
   return list
 end
 
-local function placeChips(parent, store, list, x, y, small)
+local winChips, barChips = {}, {}
+local placeChips, tickChips
+do
+-- tid tilbage paa en buff, vist praecis som Blizzards egne buffs ("15 m", "45 s")
+local function buffTime(sec)
+  sec = math.max(0, sec)
+  if SecondsToTimeAbbrev then
+    local ok, fmt, val = pcall(SecondsToTimeAbbrev, sec)
+    if ok and type(fmt) == "string" then
+      local ok2, txt = pcall(string.format, fmt, val)
+      if ok2 and txt then return txt end
+    end
+  end
+  if sec >= 3600 then return math.ceil(sec / 3600) .. " h" end
+  if sec >= 60 then return math.ceil(sec / 60) .. " m" end
+  return math.ceil(sec) .. " s"
+end
+
+-- placer chips; tiden og placeringen opdateres hvert sekund af tickChips
+local function layoutChips(store)
+  local x = store.x0 or 0
+  for _, c in ipairs(store) do
+    if c:IsShown() then
+      local w = c.isz + 4 + (c.pct:GetStringWidth() or 0) + 3 + (c.time:GetStringWidth() or 0)
+      c:SetWidth(w); c:ClearAllPoints(); c:SetPoint("LEFT", store.parent, "TOPLEFT", x, store.y); x = x + w + store.gap
+    end
+  end
+end
+local function chipTime(c)
+  local left = c.untilT and (c.untilT - clock()) or 0
+  c.time:SetText(buffTime(left))
+  c.soon = c.warn and left <= c.warn() or false
+  if c.soon then c.time:SetTextColor(1, 0.6, 0.35) else c.time:SetTextColor(0.55, 0.58, 0.64) end
+end
+
+placeChips = function(parent, store, list, x, y, small)
   local isz, fsz = small and 12 or 14, small and 10 or 11
+  store.parent, store.x0, store.y, store.gap = parent, x, y, small and 10 or 14
   for i, b in ipairs(list) do
     local c = store[i]
     if not c then
@@ -722,17 +762,35 @@ local function placeChips(parent, store, list, x, y, small)
       c.time = fs(c, F_SEMI, fsz); c.time:SetPoint("LEFT", c.pct, "RIGHT", 3, 0); c.time:SetTextColor(0.55, 0.58, 0.64)
       store[i] = c
     end
+    c.isz, c.untilT, c.warn = isz, b.untilT, b.warn
     c.icon:SetTexture(b.icon); c.pct:SetText(b.pct)
-    c.time:SetText(b.left < 60 and (math.ceil(b.left) .. "s") or dur(b.left))
-    c.soon = b.soon
-    if b.soon then c.time:SetTextColor(1, 0.6, 0.35) else c.time:SetTextColor(0.55, 0.58, 0.64) end
-    local w = isz + 4 + (c.pct:GetStringWidth() or 0) + 3 + (c.time:GetStringWidth() or 0)
-    c:SetWidth(w); c:ClearAllPoints(); c:SetPoint("LEFT", parent, "TOPLEFT", x, y); c:Show()
-    x = x + w + (small and 10 or 14)
+    chipTime(c)
+    c:Show()
   end
   for i = #list + 1, #store do store[i]:Hide() end
+  layoutChips(store)
 end
-local winChips = {}
+
+-- hvert billede: blink naar en buff er ved at loebe ud; hvert sekund: ny tid
+local chipAcc, blinkT = 0, 0
+tickChips = function(dt)
+  blinkT = blinkT + dt
+  local pulse = 0.55 + 0.45 * math.abs(math.sin(blinkT * 3))
+  chipAcc = chipAcc + dt
+  local second = chipAcc >= 1
+  if second then chipAcc = 0 end
+  for _, store in ipairs({winChips, barChips}) do
+    for _, c in ipairs(store) do
+      if c:IsShown() then
+        if second then chipTime(c) end
+        c:SetAlpha(c.soon and pulse or 1)
+      end
+    end
+    if second then layoutChips(store) end
+  end
+end
+
+end
 
 -- ---------- XP-bar ----------
 local BW = 460
@@ -747,12 +805,13 @@ bar:SetScript("OnDragStop", function(self)
 end)
 
 -- oeverste linje: logo, level, buffs ... XP-tal, procent
+local barH = 60
+local kfmt, commas, updateBar, barGain
+do
 local bLogo = bar:CreateTexture(nil, "ARTWORK"); bLogo:SetSize(15, 15); bLogo:SetPoint("LEFT", bar, "TOPLEFT", 12, -14); bLogo:SetTexture(LOGO)
 local bLevel = fs(bar, F_BOLD, 12.5); bLevel:SetPoint("LEFT", bLogo, "RIGHT", 5, 0)
 local bPct = fs(bar, F_BOLD, 12.5); bPct:SetPoint("RIGHT", bar, "TOPRIGHT", -12, -14); bPct:SetTextColor(0.62, 0.82, 1)
 local bXP = fs(bar, F_SEMI, 10); bXP:SetPoint("RIGHT", bPct, "LEFT", -8, 0); bXP:SetTextColor(0.36, 0.38, 0.44)
-local barChips = {}
-
 -- bjaelken: baggrund, nuvaerende XP (blaa), quests klar (guld), rested (lyseblaa), afrundet med en maske
 local track = CreateFrame("Frame", nil, bar)
 track:SetPoint("TOPLEFT", 12, -24); track:SetPoint("TOPRIGHT", -12, -24); track:SetHeight(14)
@@ -828,12 +887,12 @@ local function hideStats()
   for _, c in ipairs(stats) do c.dot:Hide(); c.label:Hide(); c.value:Hide() end
 end
 
-local function kfmt(n)
+kfmt = function(n)
   n = math.floor(n + 0.5)
   if n >= 1000 then return string.format("%.1fk", n / 1000) end
   return tostring(n)
 end
-local function commas(n)
+commas = function(n)
   local s = tostring(math.floor(n + 0.5))
   local out = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
   return (out:gsub("^,", ""))
@@ -859,7 +918,6 @@ local function restedPct(mx)
   return string.format("%.1f%%", p)
 end
 
-local barH = 60
 
 -- ---------- animationer ----------
 -- bjaelken glider hen til ny XP, det nye stykke blinker, kanten gloeder, store portioner XP
@@ -889,10 +947,6 @@ local function clipBand(t, a, w, lo, hi)
 end
 
 bar:SetScript("OnUpdate", function(_, dt)
-  A.blinkT = (A.blinkT or 0) + dt
-  local pulse = 0.55 + 0.45 * math.abs(math.sin(A.blinkT * 3))
-  for _, c in ipairs(barChips) do c:SetAlpha(c.soon and pulse or 1) end
-  for _, c in ipairs(winChips) do c:SetAlpha(c.soon and pulse or 1) end
   if not A.cur then return end
   local T, k = A.tgt, math.min(1, dt * 5)
   A.cur = A.cur + (T.cur - A.cur) * k
@@ -942,7 +996,7 @@ bar:SetScript("OnUpdate", function(_, dt)
 end)
 
 -- kaldes naar du faar XP: gain, om det var en quest, om du dingede
-local function barGain(gain, mx, quest, leveled, lvl)
+barGain = function(gain, mx, quest, leveled, lvl)
   if not bar:IsShown() or not A.cur or not mx or mx <= 0 then return end
   A.sparkA = 1
   if leveled then
@@ -968,7 +1022,7 @@ local function barGain(gain, mx, quest, leveled, lvl)
   A.float:SetAlpha(0); A.float:Show()
 end
 
-local function updateBar(r, head)
+updateBar = function(r, head)
   if not DB.showBar or UnitLevel("player") >= MAXLVL then bar:Hide(); return end
   bar:SetScale(DB.barScale); bar:Show()
   barH = DB.showStats and 60 or 44
@@ -992,6 +1046,8 @@ local function updateBar(r, head)
   items[#items + 1] = {"questsShort", "+" .. kfmt(questXP()), 1, 0.82, 0.29, {1, 0.82, 0.29}}
   items[#items + 1] = {"rested", restedPct(mx), 0.75, 0.88, 1, {0.62, 0.82, 1}}
   layoutStats(items)
+end
+
 end
 
 -- session: nulstilles ved ny login, ikke ved /reload
@@ -1154,8 +1210,10 @@ local function longDur(sec)
 end
 
 -- ---------- den lille boks ved siden af XP-baren ----------
+local box, updateActivity
+do
 local VH = 56
-local box = CreateFrame("Button", "LevelETAActivity", bar)
+box = CreateFrame("Button", "LevelETAActivity", bar)
 box:SetSize(30, 60); box:SetPoint("TOPLEFT", bar, "TOPRIGHT", 6, 0)
 skin(box, "Side2", 60, 64)
 box:RegisterForClicks("LeftButtonUp")
@@ -1184,7 +1242,7 @@ local vtext = fs(box, F_BOLD, 10); vtext:SetPoint("CENTER", box, "TOP", 0, -83)
 local GREEN, YELLOW, RED = {0.47, 0.86, 0.59}, {1, 0.82, 0.29}, {1, 0.42, 0.42}
 local lastGoal
 
-local function updateActivity(rL, head)
+updateActivity = function(rL, head)
   if not DB.showAct then box:Hide(); return end
   box:Show()
   box:SetHeight(barH)
@@ -1250,6 +1308,7 @@ box:SetScript("OnEnter", function(self)
   GameTooltip:Show()
 end)
 box:SetScript("OnLeave", function() GameTooltip:Hide() end)
+end
 
 -- ---------- advarsel naar en XP-buff er ved at loebe ud ----------
 local checkBuffWarnings
@@ -1836,6 +1895,7 @@ local actAcc = 0
 CreateFrame("Frame", "LevelETAClock"):SetScript("OnUpdate", function(_, el)
   if not DB then return end
   DB.play = DB.play + el
+  tickChips(el)
   actAcc = actAcc + el
   if actAcc >= 1 then
     if actAcc <= 5 then sampleActivity(actAcc) end  -- lange pauser (loadskaerm) taeller ikke
