@@ -709,9 +709,8 @@ drawTimes = function(y)
     y = placeTime(i, y, T("level") .. " " .. x.L, dur(x.d), x.d / mx, x.now)
   end
   if n >= 2 then
-    y = y - 4
-    tAvgLine:ClearAllPoints(); tAvgLine:SetPoint("TOPLEFT", 14, y); tAvgLine:SetPoint("TOPRIGHT", -14, y); tAvgLine:Show()
-    y = placeTime(#list + 1, y - 4, T("avg"), "|cffffd24a" .. dur(sum / n) .. "|r")
+    tAvgLine:Hide()  -- ingen streg: lidt luft er nok
+    y = placeTime(#list + 1, y - 6, T("avg"), "|cffffd24a" .. dur(sum / n) .. "|r")
   else
     tAvgLine:Hide()
   end
