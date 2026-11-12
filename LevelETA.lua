@@ -56,6 +56,7 @@ local LOC = {
     showBuffsBar = "XP buffs on the bar", setGoal = "Set goal",
     xphShort = "XP/h", spent = "This level", left = "Next", questsShort = "Quests",
     buffWarn = "Warn when XP buffs run out", leftFmt = "%s left",
+    warnSec = "Buff warnings", foodWarn = "Food buff, warn before", bagWarn = "Sleeping bag, warn before", secShort = "sec",
     foodSoon = "Food buff is running out", foodGone = "Food buff ran out", foodAgain = "Eat again to keep +5% XP from kills",
     bagSoon = "Sleeping bag buff is running out", bagGone = "Sleeping bag buff ran out", bagAgain = "Use the sleeping bag again for up to +3% XP",
   },
@@ -94,6 +95,7 @@ local LOC = {
     showBuffsBar = "XP-buffs på baren", setGoal = "Sæt mål",
     xphShort = "XP/t", spent = "Brugt", left = "Tilbage", questsShort = "Quests",
     buffWarn = "Advar når XP-buffs løber ud", leftFmt = "%s tilbage",
+    warnSec = "Buff-advarsler", foodWarn = "Food buff, advar før", bagWarn = "Sovepose, advar før", secShort = "sek",
     foodSoon = "Food buff løber snart ud", foodGone = "Food buff er løbet ud", foodAgain = "Spis igen for at beholde +5% XP fra kills",
     bagSoon = "Sovepose-buff løber snart ud", bagGone = "Sovepose-buff er løbet ud", bagAgain = "Brug soveposen igen for op til +3% XP",
   },
@@ -111,7 +113,7 @@ local defaults = {
   showBar = true, hideBlizz = true, barScale = 1, questRewards = {},
   showAct = true, act = {}, goalOn = false, goalLevel = 60,
   showToday = true, showNext = true, show60 = true, showBuffsWin = true, showMinimap = true,
-  showStats = true, showBuffsBar = true, tab = 1, buffWarn = true,
+  showStats = true, showBuffsBar = true, tab = 1, buffWarn = true, foodWarn = 20, bagWarn = 5,
 }
 
 -- ---------- tid og datoer ----------
@@ -697,12 +699,14 @@ end
 local FOOD_ICON = "Interface\\Icons\\Spell_Misc_Food"
 local BAG_ICON = "Interface\\Icons\\INV_Drink_15"
 
-local FOOD_SOON, BAG_SOON = 60, 300  -- advar 1 min foer food buff og 5 min foer soveposen loeber ud
+-- hvor laenge foer en buff loeber ud der advares (indstillinger: sekunder for food, minutter for soveposen)
+local function foodSoon() return DB.foodWarn or 20 end
+local function bagSoon() return (DB.bagWarn or 5) * 60 end
 local function activeBuffs()
   local list = {}
   local f, b = fedLeft(), bagLeft()
-  if f > 0 then list[#list + 1] = {icon = buffs.fedIcon or FOOD_ICON, pct = "+5%", left = f, soon = f <= FOOD_SOON} end
-  if b > 0 then list[#list + 1] = {icon = buffs.bagIcon or BAG_ICON, pct = "+" .. (buffs.bagStacks or 1) .. "%", left = b, soon = b <= BAG_SOON} end
+  if f > 0 then list[#list + 1] = {icon = buffs.fedIcon or FOOD_ICON, pct = "+5%", left = f, soon = f <= foodSoon()} end
+  if b > 0 then list[#list + 1] = {icon = buffs.bagIcon or BAG_ICON, pct = "+" .. (buffs.bagStacks or 1) .. "%", left = b, soon = b <= bagSoon()} end
   return list
 end
 
@@ -718,7 +722,8 @@ local function placeChips(parent, store, list, x, y, small)
       c.time = fs(c, F_SEMI, fsz); c.time:SetPoint("LEFT", c.pct, "RIGHT", 3, 0); c.time:SetTextColor(0.55, 0.58, 0.64)
       store[i] = c
     end
-    c.icon:SetTexture(b.icon); c.pct:SetText(b.pct); c.time:SetText(dur(b.left))
+    c.icon:SetTexture(b.icon); c.pct:SetText(b.pct)
+    c.time:SetText(b.left < 60 and (math.ceil(b.left) .. "s") or dur(b.left))
     c.soon = b.soon
     if b.soon then c.time:SetTextColor(1, 0.6, 0.35) else c.time:SetTextColor(0.55, 0.58, 0.64) end
     local w = isz + 4 + (c.pct:GetStringWidth() or 0) + 3 + (c.time:GetStringWidth() or 0)
@@ -1279,7 +1284,8 @@ do
       local left = untilT - now
       if left <= soon and warned[key] ~= untilT then
         warned[key] = untilT
-        show(tex, T(prefix .. "Soon"), string.format(T("leftFmt"), dur(left)))
+        local txt = left < 60 and (math.ceil(left) .. " " .. T("secShort")) or dur(left)
+        show(tex, T(prefix .. "Soon"), string.format(T("leftFmt"), txt))
       end
     elseif seen[key] then
       -- buffen er vaek: advar kun hvis tiden var gaaet, ikke hvis du doede
@@ -1289,8 +1295,8 @@ do
   end
   checkBuffWarnings = function()
     if not DB.buffWarn then return end
-    check("fed", buffs.fedUntil, FOOD_SOON, buffs.fedIcon or FOOD_ICON, "food")
-    check("bag", buffs.bagUntil, BAG_SOON, buffs.bagIcon or BAG_ICON, "bag")
+    check("fed", buffs.fedUntil, foodSoon(), buffs.fedIcon or FOOD_ICON, "food")
+    check("bag", buffs.bagUntil, bagSoon(), buffs.bagIcon or BAG_ICON, "bag")
   end
 end
 
@@ -1365,7 +1371,7 @@ do
 -- ---------- indstillinger ----------
 local SW, COL = 520, 260
 S = CreateFrame("Frame", "LevelETASettings", UIParent)
-S:SetSize(SW, 446); S:SetPoint("CENTER"); S:SetFrameStrata("DIALOG"); S:Hide()
+S:SetSize(SW, 482); S:SetPoint("CENTER"); S:SetFrameStrata("DIALOG"); S:Hide()
 skin(S, "Wide", 1040, 2048)
 movable(S, function() return true end)
 S:SetScript("OnDragStop", S.StopMovingOrSizing)
@@ -1501,13 +1507,18 @@ section(-92, "barHead")
 toggle(-114, "showBar", function() return DB.showBar end, function(v) DB.showBar = v end)
 toggle(-142, "hideBlizz", function() return DB.hideBlizz end, function(v) DB.hideBlizz = v; applyBlizz() end)
 slider(-174, "barSize", 0.6, 2.0, 0.05, function() return DB.barScale end, function(v) DB.barScale = v end, pctFmt)
+section(-226, "warnSec")
+toggle(-248, "buffWarn", function() return DB.buffWarn end, function(v) DB.buffWarn = v end)
+slider(-280, "foodWarn", 5, 120, 5, function() return DB.foodWarn end, function(v) DB.foodWarn = v end,
+  function(v) return v .. " " .. T("secShort") end)
+slider(-326, "bagWarn", 1, 30, 1, function() return DB.bagWarn end, function(v) DB.bagWarn = v end,
+  function(v) return v .. " " .. T("min") end)
 colX = COL
 section(-92, "onBar")
 toggle(-114, "showStats", function() return DB.showStats end, function(v) DB.showStats = v end)
 toggle(-142, "showBuffsBar", function() return DB.showBuffsBar end, function(v) DB.showBuffsBar = v end)
 toggle(-170, "showAct", function() return DB.showAct end, function(v) DB.showAct = v end)
-toggle(-198, "buffWarn", function() return DB.buffWarn end, function(v) DB.buffWarn = v end)
-local goalBtn = pill("", 120); goalBtn:SetPoint("TOPLEFT", COL + 18, -234); label(goalBtn.text, "setGoal")
+local goalBtn = pill("", 120); goalBtn:SetPoint("TOPLEFT", COL + 18, -206); label(goalBtn.text, "setGoal")
 
 -- fane 3: spilletid, quests og rested
 host = pages[3]
@@ -1528,13 +1539,13 @@ host = S
 
 -- info: virker alene og sammen med ForeverXP Bar
 local infoLine = S:CreateTexture(nil, "ARTWORK")
-infoLine:SetPoint("TOPLEFT", 18, -342); infoLine:SetPoint("TOPRIGHT", -18, -342); infoLine:SetHeight(1)
+infoLine:SetPoint("TOPLEFT", 18, -378); infoLine:SetPoint("TOPRIGHT", -18, -378); infoLine:SetHeight(1)
 infoLine:SetColorTexture(1, 1, 1, 0.06)
-local infoText = fs(S, F_SEMI, 11); infoText:SetPoint("TOPLEFT", 18, -354); infoText:SetTextColor(0.55, 0.58, 0.64)
+local infoText = fs(S, F_SEMI, 11); infoText:SetPoint("TOPLEFT", 18, -390); infoText:SetTextColor(0.55, 0.58, 0.64)
 label(infoText, "standalone")
 local fxbDot = S:CreateTexture(nil, "ARTWORK")
-fxbDot:SetSize(7, 7); fxbDot:SetPoint("TOPLEFT", 19, -374); fxbDot:SetTexture(TEX .. "Dot")
-local fxbText = fs(S, F_SEMI, 11); fxbText:SetPoint("TOPLEFT", 32, -372)
+fxbDot:SetSize(7, 7); fxbDot:SetPoint("TOPLEFT", 19, -410); fxbDot:SetTexture(TEX .. "Dot")
+local fxbText = fs(S, F_SEMI, 11); fxbText:SetPoint("TOPLEFT", 32, -408)
 
 -- knapper i bunden
 local langBtn = pill("", 140); langBtn:SetPoint("BOTTOMLEFT", 18, 16); label(langBtn.text, "language")
