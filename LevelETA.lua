@@ -528,12 +528,10 @@ local function skin(frame, prefix, texW, canvasW)
   mid:SetTexture(TEX .. prefix .. "Mid"); mid:SetTexCoord(0, texW / canvasW, 0, 40 / 64)
 end
 
--- logo, navn og guldstreg oeverst
+-- navn og guldstreg oeverst
 local function header(frame, titleText)
-  local logo = frame:CreateTexture(nil, "ARTWORK")
-  logo:SetSize(22, 22); logo:SetPoint("TOPLEFT", 12, -9); logo:SetTexture(LOGO)
   local title = fs(frame, F_BOLD, 15)
-  title:SetPoint("LEFT", logo, "RIGHT", 7, 0)
+  title:SetPoint("LEFT", frame, "TOPLEFT", 14, -20)
   if titleText then title:SetText(titleText) end
   local line = frame:CreateTexture(nil, "ARTWORK")
   line:SetSize(22, 2); line:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -5)
@@ -832,12 +830,11 @@ bar:SetScript("OnDragStop", function(self)
   DB.barPoint = {p, rp, x, y}
 end)
 
--- oeverste linje: logo, level, buffs ... XP-tal, procent
+-- oeverste linje: level, buffs ... XP-tal, procent
 local barH = 60
 local kfmt, commas, updateBar
 do
-local bLogo = bar:CreateTexture(nil, "ARTWORK"); bLogo:SetSize(15, 15); bLogo:SetPoint("LEFT", bar, "TOPLEFT", 12, -14); bLogo:SetTexture(LOGO)
-local bLevel = fs(bar, F_BOLD, 12.5); bLevel:SetPoint("LEFT", bLogo, "RIGHT", 5, 0)
+local bLevel = fs(bar, F_BOLD, 12.5); bLevel:SetPoint("LEFT", bar, "TOPLEFT", 12, -14)
 local bPct = fs(bar, F_BOLD, 12.5); bPct:SetPoint("RIGHT", bar, "TOPRIGHT", -12, -14); bPct:SetTextColor(0.62, 0.82, 1)
 local bXP = fs(bar, F_SEMI, 10); bXP:SetPoint("RIGHT", bPct, "LEFT", -8, 0); bXP:SetTextColor(0.36, 0.38, 0.44)
 -- bjaelken: baggrund, nuvaerende XP (blaa), quests klar (guld), rested (lyseblaa), afrundet med en maske
@@ -965,7 +962,7 @@ updateBar = function(r, head)
     bar._c1, bar._c2, bar._c3 = c1, c2, c3
     setSeg(segCur, 0, c1); setSeg(segQuest, c1, c2); setSeg(segRest, c2, c3)
   end
-  placeChips(bar, barChips, DB.showBuffsBar and activeBuffs() or {}, 12 + 15 + 5 + (bLevel:GetStringWidth() or 55) + 12, -14, true)
+  placeChips(bar, barChips, DB.showBuffsBar and activeBuffs() or {}, 12 + (bLevel:GetStringWidth() or 55) + 12, -14, true)
   if not DB.showStats then hideStats(); return end
 
   local items = {{"xphShort", kfmt(liveXPh() or (r * 3600)), 0.91, 0.92, 0.94}}
