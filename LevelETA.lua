@@ -1563,7 +1563,7 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
     if LevelETAMinimapButton then LevelETAMinimapButton:SetShown(DB.showMinimap) end
     bar:ClearAllPoints()
     if DB.barPoint then bar:SetPoint(DB.barPoint[1], UIParent, DB.barPoint[2], DB.barPoint[3], DB.barPoint[4])
-    else bar:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 150) end
+    else bar:SetPoint("TOP", UIParent, "TOP", -23, -14) end  -- standard: oeverst paa skaermen, midt for (bar + aktivitets-boks)
     placeButton()
   elseif event == "PLAYER_ENTERING_WORLD" then
     if a1 or not DB.sess then DB.sess = {start = time(), xp = 0, kills = 0, quests = 0, levels = 0} end  -- ny login
