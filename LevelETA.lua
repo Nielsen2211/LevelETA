@@ -736,7 +736,7 @@ local barChips = {}
 
 -- bjaelken: baggrund, nuvaerende XP (blaa), quests klar (guld), rested (lyseblaa), afrundet med en maske
 local track = CreateFrame("Frame", nil, bar)
-track:SetPoint("TOPLEFT", 14, -32); track:SetPoint("TOPRIGHT", -14, -32); track:SetHeight(10)
+track:SetPoint("TOPLEFT", 14, -30); track:SetPoint("TOPRIGHT", -14, -30); track:SetHeight(16)
 local TRW = BW - 28
 local mask
 if track.CreateMaskTexture then
@@ -759,7 +759,7 @@ local segQuest = barTex("ARTWORK", 2, 1, 0.82, 0.29, 0.8)
 local segRest = barTex("ARTWORK", 1, 0.62, 0.82, 1, 0.43)
 for i = 1, 9 do
   local t = track:CreateTexture(nil, "OVERLAY")
-  t:SetColorTexture(0, 0, 0, 0.18); t:SetSize(1, 6)
+  t:SetColorTexture(0, 0, 0, 0.18); t:SetSize(1, 10)
   t:SetPoint("CENTER", track, "LEFT", TRW * i / 10, 0)
 end
 local function setSeg(t, from, to)
@@ -775,14 +775,14 @@ local CW = (BW - 28) / 4
 for i = 1, 4 do
   local x = 14 + CW * (i - 1)
   local c = {}
-  c.dot = bar:CreateTexture(nil, "ARTWORK"); c.dot:SetSize(7, 7); c.dot:SetTexture(TEX .. "Dot")
-  c.dot:SetPoint("LEFT", bar, "TOPLEFT", x, -59)
-  c.label = fs(bar, F_SEMI, 10.5); c.label:SetTextColor(0.55, 0.58, 0.64)
-  c.value = fs(bar, F_BOLD, 15); c.value:SetPoint("LEFT", bar, "TOPLEFT", x, -77)
+  c.dot = bar:CreateTexture(nil, "ARTWORK"); c.dot:SetSize(6, 6); c.dot:SetTexture(TEX .. "Dot")
+  c.dot:SetPoint("LEFT", bar, "TOPLEFT", x, -60)
+  c.label = fs(bar, F_SEMI, 9.5); c.label:SetTextColor(0.55, 0.58, 0.64)
+  c.value = fs(bar, F_BOLD, 13); c.value:SetPoint("LEFT", bar, "TOPLEFT", x, -77)
   c.x = x
   if i > 1 then
     local sep = bar:CreateTexture(nil, "ARTWORK"); sep:SetColorTexture(1, 1, 1, 0.06)
-    sep:SetSize(1, 32); sep:SetPoint("TOPLEFT", x - 10, -52)
+    sep:SetSize(1, 30); sep:SetPoint("TOPLEFT", x - 10, -54)
     c.sep = sep
   end
   cols[i] = c
@@ -793,9 +793,9 @@ local function setCol(i, labelKey, value, r, g, b, dot)
   c.label:ClearAllPoints()
   if dot then
     c.dot:SetVertexColor(dot[1], dot[2], dot[3]); c.dot:Show()
-    c.label:SetPoint("LEFT", bar, "TOPLEFT", c.x + 11, -59)
+    c.label:SetPoint("LEFT", bar, "TOPLEFT", c.x + 10, -60)
   else
-    c.dot:Hide(); c.label:SetPoint("LEFT", bar, "TOPLEFT", c.x, -59)
+    c.dot:Hide(); c.label:SetPoint("LEFT", bar, "TOPLEFT", c.x, -60)
   end
 end
 
@@ -834,7 +834,7 @@ local barH = 96
 local function updateBar(r, head)
   if not DB.showBar or UnitLevel("player") >= MAXLVL then bar:Hide(); return end
   bar:SetScale(DB.barScale); bar:Show()
-  barH = DB.showStats and 96 or 50
+  barH = DB.showStats and 96 or 56
   bar:SetHeight(barH)
   for _, c in ipairs(cols) do
     c.label:SetShown(DB.showStats); c.value:SetShown(DB.showStats)
