@@ -1358,7 +1358,7 @@ host = S
 -- info: virker alene og sammen med ForeverXP Bar
 local infoLine = S:CreateTexture(nil, "ARTWORK")
 infoLine:SetPoint("TOPLEFT", 18, -378); infoLine:SetPoint("TOPRIGHT", -18, -378); infoLine:SetHeight(1)
-infoLine:SetColorTexture(1, 1, 1, 0.06)
+infoLine:SetColorTexture(1, 1, 1, 0); infoLine:Hide()  -- ingen streg over info-teksten
 local infoText = fs(S, F_SEMI, 11); infoText:SetPoint("TOPLEFT", 18, -390); infoText:SetTextColor(0.55, 0.58, 0.64)
 label(infoText, "standalone")
 local fxbDot = S:CreateTexture(nil, "ARTWORK")
