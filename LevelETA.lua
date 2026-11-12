@@ -53,7 +53,7 @@ local LOC = {
     tabWindow = "Window", tabBar = "XP bar", tabTime = "Play time", winSec = "Window", rowsSec = "Show in the window",
     showToday = "Level when I stop today", showNext = "Next tenth level", show60 = "Level 60", showBuffsWin = "XP buffs",
     showMinimap = "Minimap button", onBar = "On the bar", showStats = "Numbers under the bar",
-    showBuffsBar = "XP buffs on the bar", setGoal = "Set goal",
+    showBuffsBar = "XP buffs on the bar", setGoal = "Set goal", anim = "Animations and shimmer",
     xphShort = "XP/h", spent = "This level", left = "Next", questsShort = "Quests",
     buffWarn = "Warn when XP buffs run out", leftFmt = "%s left",
     warnSec = "Buff warnings", foodWarn = "Food buff, warn before", bagWarn = "Sleeping bag, warn before", secShort = "sec",
@@ -92,7 +92,7 @@ local LOC = {
     tabWindow = "Vindue", tabBar = "XP-bar", tabTime = "Spilletid", winSec = "Vinduet", rowsSec = "Vis i vinduet",
     showToday = "Level når jeg stopper i dag", showNext = "Næste tiende level", show60 = "Level 60", showBuffsWin = "XP-buffs",
     showMinimap = "Minimap-knap", onBar = "På baren", showStats = "Tal under baren",
-    showBuffsBar = "XP-buffs på baren", setGoal = "Sæt mål",
+    showBuffsBar = "XP-buffs på baren", setGoal = "Sæt mål", anim = "Animationer og glimmer",
     xphShort = "XP/t", spent = "Brugt", left = "Tilbage", questsShort = "Quests",
     buffWarn = "Advar når XP-buffs løber ud", leftFmt = "%s tilbage",
     warnSec = "Buff-advarsler", foodWarn = "Food buff, advar før", bagWarn = "Sovepose, advar før", secShort = "sek",
@@ -113,7 +113,7 @@ local defaults = {
   showBar = true, hideBlizz = true, barScale = 1, questRewards = {},
   showAct = true, act = {}, goalOn = false, goalLevel = 60,
   showToday = true, showNext = true, show60 = true, showBuffsWin = true, showMinimap = true,
-  showStats = true, showBuffsBar = true, tab = 1, buffWarn = true, foodWarn = 20, bagWarn = 5,
+  showStats = true, showBuffsBar = true, anim = true, tab = 1, buffWarn = true, foodWarn = 20, bagWarn = 5,
 }
 
 -- ---------- tid og datoer ----------
@@ -320,6 +320,7 @@ local function mergedHistory(rec)
       if type(rec.times[L]) == "number" then DB.fxbTimes[L] = rec.times[L] end
     end
   end
+  if INFO.mh then return INFO.mh end  -- samme refresh: genbrug
   local src = {durations(DB.ptimes), durations(DB.fxbTimes), durations(DB.times)}
   local used = {false, false, false}
   local h = {}
@@ -338,6 +339,7 @@ local function mergedHistory(rec)
   if used[1] or used[3] then names[#names + 1] = NAME end
   if used[2] then names[#names + 1] = "ForeverXP Bar" end
   INFO.source = #names > 0 and table.concat(names, " + ") or nil
+  if INFO.mhOn then INFO.mh = h end
   return h
 end
 
@@ -427,8 +429,8 @@ end
 
 -- lang sigt (level 50 og 60): 90 % historik, 10 % dit tempo nu, glattet over ca. 2 timer
 local lastLong
-local function longRate()
-  local r, est = shortRate()
+local function longRate(r, est)
+  if r == nil then r, est = shortRate() end
   if est or not INFO.eh then return r, est end
   local lvl = UnitLevel("player")
   local e = 0.9 * INFO.eh + 0.1 * (INFO.liveE or INFO.eh)
@@ -578,14 +580,19 @@ end
 local rows = {newRow(), newRow(), newRow()}
 
 local function setRow(c, y, title, value, progress, last)
-  c.title:SetText(title); c.value:SetText(value)
+  if c._t ~= title then c._t = title; c.title:SetText(title) end
+  if c._v ~= value then c._v = value; c.value:SetText(value) end
   local bar = type(progress) == "number"
   c.track:SetShown(bar); c.fill:SetShown(bar)
   if bar then c.fill:SetWidth((W - 28) * math.max(0.02, math.min(1, progress))) end
   c.line:SetShown(not last and not bar)
   local h = bar and 28 or 24
-  c:SetHeight(h); c:ClearAllPoints()
-  c:SetPoint("TOPLEFT", 14, y); c:SetPoint("TOPRIGHT", -14, y); c:Show()
+  if c._y ~= y or c._h ~= h then  -- flyt kun, naar placeringen aendrer sig
+    c._y, c._h = y, h
+    c:SetHeight(h); c:ClearAllPoints()
+    c:SetPoint("TOPLEFT", 14, y); c:SetPoint("TOPRIGHT", -14, y)
+  end
+  c._keep = true; c:Show()
   return y - h
 end
 
@@ -639,20 +646,28 @@ end
 local function placeTime(i, y, title, value, frac, now)
   local c = timeRow(i)
   local h, bh = 17, 4
-  if now then
-    h, bh = 30, 6
-    c.title:SetFont(F_BOLD, 14); c.value:SetFont(F_BOLD, 16)
-    c.title:SetTextColor(0.62, 0.82, 1); c.value:SetTextColor(0.62, 0.82, 1); c.fill:SetColorTexture(0.62, 0.82, 1, 0.9)
-  else
-    c.title:SetFont(F_SEMI, 11); c.value:SetFont(F_BOLD, 12)
-    c.title:SetTextColor(0.55, 0.58, 0.64); c.value:SetTextColor(0.91, 0.92, 0.94); c.fill:SetColorTexture(0.62, 0.82, 1, 0.35)
+  now = now and true or false
+  if now then h, bh = 30, 6 end
+  if c._now ~= now then  -- skrifttype skiftes kun, naar raekken skifter type (SetFont er dyr)
+    c._now = now
+    if now then
+      c.title:SetFont(F_BOLD, 14); c.value:SetFont(F_BOLD, 16)
+      c.title:SetTextColor(0.62, 0.82, 1); c.value:SetTextColor(0.62, 0.82, 1); c.fill:SetColorTexture(0.62, 0.82, 1, 0.9)
+    else
+      c.title:SetFont(F_SEMI, 11); c.value:SetFont(F_BOLD, 12)
+      c.title:SetTextColor(0.55, 0.58, 0.64); c.value:SetTextColor(0.91, 0.92, 0.94); c.fill:SetColorTexture(0.62, 0.82, 1, 0.35)
+    end
+    c:SetHeight(h); c.track:SetHeight(bh); c.fill:SetHeight(bh)
+    c._y = nil
   end
-  c.title:SetText(title); c.value:SetText(value or "")
-  c:SetHeight(h); c.track:SetHeight(bh); c.fill:SetHeight(bh)
+  value = value or ""
+  if c._t ~= title then c._t = title; c.title:SetText(title) end
+  if c._v ~= value then c._v = value; c.value:SetText(value) end
   local bar = type(frac) == "number"
   c.track:SetShown(bar); c.fill:SetShown(bar)
   if bar then c.fill:SetWidth(math.max(1, TW * math.min(1, frac))) end
-  c:ClearAllPoints(); c:SetPoint("TOPLEFT", 14, y); c:SetPoint("TOPRIGHT", -14, y); c:Show()
+  if c._y ~= y then c._y = y; c:ClearAllPoints(); c:SetPoint("TOPLEFT", 14, y); c:SetPoint("TOPRIGHT", -14, y) end
+  c._keep = true; c:Show()
   return y - h
 end
 
@@ -680,9 +695,12 @@ drawTimes = function(y)
     end
   end
 
-  for _, c in ipairs(tRows) do c:Hide() end
-  tAvgLine:Hide()
-  if #list == 0 then return placeTime(1, y, T("noTimes")) end
+  for _, c in ipairs(tRows) do c._keep = false end
+  local function done(y2)  -- skjul kun de raekker der ikke bruges mere
+    for _, c in ipairs(tRows) do if not c._keep then c:Hide() end end
+    return y2
+  end
+  if #list == 0 then tAvgLine:Hide(); return done(placeTime(1, y, T("noTimes"))) end
 
   local mx = 0
   for _, x in ipairs(list) do mx = math.max(mx, x.d) end
@@ -693,8 +711,10 @@ drawTimes = function(y)
     y = y - 4
     tAvgLine:ClearAllPoints(); tAvgLine:SetPoint("TOPLEFT", 14, y); tAvgLine:SetPoint("TOPRIGHT", -14, y); tAvgLine:Show()
     y = placeTime(#list + 1, y - 4, T("avg"), "|cffffd24a" .. dur(sum / n) .. "|r")
+  else
+    tAvgLine:Hide()
   end
-  return y
+  return done(y)
 end
 
 end
@@ -934,7 +954,7 @@ local A = {tgt = {cur = 0, quest = 0, rest = 0}, flashA = 0, sparkA = 0.3, shine
 local function animTex(layer, sub, w)
   local t = track:CreateTexture(nil, layer, nil, sub)
   t:SetTexture(TEX .. "Shine"); t:SetBlendMode("ADD")
-  t:SetPoint("TOP"); t:SetPoint("BOTTOM"); if w then t:SetWidth(w) end
+  if w then t:SetWidth(w) end
   if mask and t.AddMaskTexture then t:AddMaskTexture(mask) end
   t:Hide()
   return t
@@ -949,12 +969,13 @@ A.float = fs(bar, F_BOLD, 13); A.float:SetShadowOffset(1, -1); A.float:SetShadow
 local function clipBand(t, a, w, lo, hi)
   local v0, v1 = math.max(a, lo), math.min(a + w, hi)
   if v1 - v0 < 0.5 then t:Hide(); return end
-  t:ClearAllPoints(); t:SetPoint("TOP"); t:SetPoint("BOTTOM")
-  t:SetPoint("LEFT", track, "LEFT", v0, 0); t:SetWidth(v1 - v0)
+  t:SetPoint("TOPLEFT", track, "TOPLEFT", v0, 0); t:SetPoint("BOTTOMLEFT", track, "BOTTOMLEFT", v0, 0)  -- samme ankre: flyttes, ingen ny opsaetning
+  t:SetWidth(v1 - v0)
   t:SetTexCoord((v0 - a) / w, (v1 - a) / w, 0, 1); t:Show()
 end
 
 local idleAcc = 0
+local SHINE_EVERY = 8  -- et glimmer hen over rested hvert 8. sekund
 local function near(a, b) return math.abs(a - b) < 0.0004 end
 bar:SetScript("OnUpdate", function(_, dt)
   if not A.cur then return end
@@ -963,14 +984,16 @@ bar:SetScript("OnUpdate", function(_, dt)
   local busy = moving or A.flashA > 0 or A.sweepT or A.floatT or A.sparkA > 0.3
   local qEnd = math.max(A.cur, A.quest)
   local rEnd = math.max(qEnd, A.rest)
+  local fx = DB.anim ~= false
   if not busy then
-    if rEnd - qEnd < 0.004 then return end  -- intet at tegne
-    idleAcc = idleAcc + dt                  -- kun glimmeret koerer: 30 billeder i sekundet er nok
-    if idleAcc < 0.033 then return end
+    if not fx or rEnd - qEnd < 0.004 then return end  -- intet at tegne
+    idleAcc = idleAcc + dt
+    if A.shineT >= 1.4 and A.shineT + idleAcc < SHINE_EVERY then return end  -- pause mellem glimmer: intet arbejde
+    if idleAcc < 0.033 then return end      -- glimmeret: 30 billeder i sekundet er nok
     dt, idleAcc = idleAcc, 0
   end
   if moving then
-    local k = math.min(1, dt * 5)
+    local k = fx and math.min(1, dt * 5) or 1  -- uden effekter: hop direkte
     A.cur = near(tg.cur, A.cur) and tg.cur or A.cur + (tg.cur - A.cur) * k
     A.quest = near(tg.quest, A.quest) and tg.quest or A.quest + (tg.quest - A.quest) * k
     A.rest = near(tg.rest, A.rest) and tg.rest or A.rest + (tg.rest - A.rest) * k
@@ -1000,11 +1023,12 @@ bar:SetScript("OnUpdate", function(_, dt)
   end
   -- glimmer hen over rested-delen hvert par sekunder
   local r0, r1 = TRW * qEnd, TRW * rEnd
-  if r1 - r0 > 2 then
-    A.shineT = (A.shineT + dt) % 2.8
+  if fx and r1 - r0 > 2 then
+    A.shineT = (A.shineT + dt) % SHINE_EVERY
     local p = A.shineT / 1.4
-    if p <= 1 then clipBand(A.shine, r0 - 36 + (r1 - r0 + 36) * p, 36, r0, r1) else A.shine:Hide() end
-  else
+    if p <= 1 then clipBand(A.shine, r0 - 36 + (r1 - r0 + 36) * p, 36, r0, r1)
+    elseif A.shine:IsShown() then A.shine:Hide() end
+  elseif A.shine:IsShown() then
     A.shine:Hide()
   end
   -- svaevende tekst ("+3,200 XP" eller "Level 46!")
@@ -1024,8 +1048,12 @@ end)
 -- kaldes naar du faar XP: gain, om det var en quest, om du dingede
 barGain = function(gain, mx, quest, leveled, lvl)
   if not bar:IsShown() or not A.cur or not mx or mx <= 0 then return end
-  A.sparkA = 1
   A.dirty = true
+  if DB.anim == false then  -- effekter slaaet fra: baren hopper bare
+    if leveled then A.cur, A.quest, A.rest = 0, 0, 0 end
+    return
+  end
+  A.sparkA = 1
   if leveled then
     A.cur, A.quest, A.rest = 0, 0, 0
     A.flashFrom, A.flashA = 0, 1
@@ -1051,9 +1079,10 @@ end
 
 updateBar = function(r, head)
   if not DB.showBar or UnitLevel("player") >= MAXLVL then bar:Hide(); return end
-  bar:SetScale(DB.barScale); bar:Show()
+  if bar._scale ~= DB.barScale then bar._scale = DB.barScale; bar:SetScale(DB.barScale) end
+  bar:Show()
   barH = DB.showStats and 60 or 44
-  bar:SetHeight(barH)
+  if bar._h ~= barH then bar._h = barH; bar:SetHeight(barH) end
   local lvl, xp, mx = UnitLevel("player"), UnitXP("player"), UnitXPMax("player")
   if not mx or mx <= 0 then return end
   bLevel:SetText(T("level") .. " " .. lvl)
@@ -1394,8 +1423,8 @@ local function mainRows(y)
     return y
   end
 
-  local r = shortRate()
-  local rL = longRate()
+  local r, est = shortRate()
+  local rL = longRate(r, est)
   local head = headStart(r)
   local list = {}
 
@@ -1430,24 +1459,40 @@ end
 
 local function refresh()
   if not DB then return end
+  local t0 = debugprofilestop and debugprofilestop()
+  INFO.mh, INFO.mhOn = nil, true  -- historikken regnes kun ud en gang pr. refresh
   if buffsDirty then scanBuffs() end
-  f:SetScale(DB.scale)
-  for _, c in ipairs(rows) do c:Hide() end
-  local y, r, head, rL = mainRows(-44)
-  local list = DB.showBuffsWin and activeBuffs() or {}
-  if #list > 0 then
-    placeChips(f, winChips, list, 14, y - 12); y = y - 22
+  local r, head, rL
+  if DB.hidden then
+    f:Hide()  -- vinduet er slaaet fra: spring alt arbejdet for det over
   else
-    placeChips(f, winChips, list, 0, 0)
+    if f._scale ~= DB.scale then f._scale = DB.scale; f:SetScale(DB.scale) end
+    for _, c in ipairs(rows) do c._keep = false end
+    local y
+    y, r, head, rL = mainRows(-44)
+    for _, c in ipairs(rows) do if not c._keep then c:Hide() end end
+    local list = DB.showBuffsWin and activeBuffs() or {}
+    if #list > 0 then
+      placeChips(f, winChips, list, 14, y - 12); y = y - 22
+    else
+      placeChips(f, winChips, list, 0, 0)
+    end
+    if DB.showTimes then y = drawTimes(y) else hideTimes() end
+    if f._h ~= y then f._h = y; f:SetHeight(-y + 10) end
+    f:SetShown(y < -44)  -- intet at vise: skjul vinduet helt
   end
-  if DB.showTimes then y = drawTimes(y) else hideTimes() end
-  f:SetHeight(-y + 10)
-  f:SetShown(not DB.hidden and y < -44)  -- intet at vise: skjul vinduet helt
   if LevelETAMinimapButton then LevelETAMinimapButton:SetShown(DB.showMinimap) end
-  r = r or shortRate()
+  local est
+  if not r then r, est = shortRate() end
   head = head or headStart(r)
   updateBar(r, head)
-  if bar:IsShown() then updateActivity(rL or longRate(), head) end
+  if bar:IsShown() then updateActivity(rL or longRate(r, est), head) end
+  INFO.mh, INFO.mhOn = nil, false
+  if t0 then  -- egen maaling til /lp perf
+    local ms = debugprofilestop() - t0
+    INFO.pN, INFO.pSum = (INFO.pN or 0) + 1, (INFO.pSum or 0) + ms
+    if ms > (INFO.pMax or 0) then INFO.pMax = ms end
+  end
 end
 
 -- indstillinger og maal-vindue i egen blok (Lua tillader kun 200 lokale variabler i filen)
@@ -1603,7 +1648,8 @@ section(-92, "onBar")
 toggle(-114, "showStats", function() return DB.showStats end, function(v) DB.showStats = v end)
 toggle(-142, "showBuffsBar", function() return DB.showBuffsBar end, function(v) DB.showBuffsBar = v end)
 toggle(-170, "showAct", function() return DB.showAct end, function(v) DB.showAct = v end)
-local goalBtn = pill("", 120); goalBtn:SetPoint("TOPLEFT", COL + 18, -206); label(goalBtn.text, "setGoal")
+toggle(-198, "anim", function() return DB.anim end, function(v) DB.anim = v end)
+local goalBtn = pill("", 120); goalBtn:SetPoint("TOPLEFT", COL + 18, -234); label(goalBtn.text, "setGoal")
 
 -- fane 3: spilletid, quests og rested
 host = pages[3]
@@ -1716,6 +1762,7 @@ toggleSettings = function() S:SetShown(not S:IsShown()) end
 toggleWindow = function()
   DB.hidden = f:IsShown()
   f:SetShown(not DB.hidden)
+  if not DB.hidden then refresh() end
   if S:IsShown() then for _, c in ipairs(controls) do c.load() end end
 end
 end
@@ -1950,8 +1997,15 @@ SlashCmdList.LEVELETA = function(msg)
       local all = P.GetOverallMetric and get(P.GetOverallMetric, M.RecentAverageTime)
       print(string.format("|cffffd24aLevelETA|r: %.3f ms / frame (avg), peak %.2f ms. All addons: %s ms / frame",
         avg or 0, peak or 0, all and string.format("%.3f", all) or "?"))
+      local o1, o5 = get(P.GetAddOnMetric, ADDON, M.CountTimeOver1Ms), get(P.GetAddOnMetric, ADDON, M.CountTimeOver5Ms)
+      local a5 = P.GetOverallMetric and get(P.GetOverallMetric, M.CountTimeOver5Ms)
+      if o1 then print(string.format("  LevelETA frames over 1 ms: %d, over 5 ms: %d. All addons over 5 ms: %s",
+        o1, o5 or 0, a5 and tostring(a5) or "?")) end
     else
       print("|cffffd24aLevelETA|r: this game version has no addon timing (C_AddOnProfiler).")
+    end
+    if INFO.pN and INFO.pN > 0 then
+      print(string.format("  Update: %.2f ms avg, %.2f ms max (%d updates)", INFO.pSum / INFO.pN, INFO.pMax, INFO.pN))
     end
   else toggleSettings() end
 end
