@@ -796,30 +796,21 @@ placeChips = function(parent, store, list, x, y, small)
 end
 
 -- hvert billede: blink naar en buff er ved at loebe ud; hvert sekund: ny tid
-local chipAcc, blinkT = 0, 0
-local anySoon = false
+local blinkOn = false
 local stores = {winChips, barChips}
-tickChips = function(dt)
-  chipAcc = chipAcc + dt
-  if chipAcc >= 1 then  -- hvert sekund: ny tid
-    chipAcc, anySoon = 0, false
-    for _, store in ipairs(stores) do
-      if store[1] then
-        for _, c in ipairs(store) do
-          if c:IsShown() then
-            chipTime(c)
-            if c.soon then anySoon = true else c:SetAlpha(1) end
-          end
-        end
-        layoutChips(store)
-      end
-    end
-  end
-  if not anySoon then return end
-  blinkT = blinkT + dt  -- kun naar noget er ved at loebe ud: blink i hvert billede
-  local pulse = 0.55 + 0.45 * math.abs(math.sin(blinkT * 3))
+tickChips = function()  -- hvert sekund: ny tid, og blink (taend/sluk) naar en buff er ved at loebe ud
+  blinkOn = not blinkOn
   for _, store in ipairs(stores) do
-    for _, c in ipairs(store) do if c.soon and c:IsShown() then c:SetAlpha(pulse) end end
+    if store[1] then
+      for _, c in ipairs(store) do
+        if c:IsShown() then
+          chipTime(c)
+          local a = (c.soon and not blinkOn) and 0.45 or 1
+          if c._a ~= a then c._a = a; c:SetAlpha(a) end
+        end
+      end
+      layoutChips(store)
+    end
   end
 end
 
@@ -1599,26 +1590,30 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
     lastXP, lastMax, lastLevel, lastEx = xp, mx, lvl, ex
     -- baren opdateres med det samme; resten (tider, vindue, aktivitet) samles og regnes hoejst hvert 2. sekund
     if INFO.r then updateBar(INFO.r, headStart(INFO.r)) else refresh() end
-    acc = math.max(acc, 8)
+    acc = math.max(acc, 13)
   end
 end)
 
-local actAcc = 0
 -- uret koerer paa sin egen usynlige ramme, saa spilletid, aktivitet og advarsler taeller med,
 -- ogsaa naar vinduet er skjult (fx naar man kun bruger XP-baren)
-CreateFrame("Frame", "LevelETAClock"):SetScript("OnUpdate", function(_, el)
+-- et tik i sekundet (som andre lette addons), intet arbejde i hvert billede
+local function tick(el)
   if not DB then return end
   DB.play = DB.play + el
-  tickChips(el)
-  actAcc = actAcc + el
-  if actAcc >= 1 then
-    if buffsDirty then scanBuffs() end
-    checkBuffWarnings()
-    actAcc = 0
-  end
+  tickChips()
+  if buffsDirty then scanBuffs() end
+  checkBuffWarnings()
   acc = acc + el
-  if acc >= 10 then acc = 0; refresh() end
-end)
+  if acc >= 15 then acc = 0; refresh() end
+end
+local clockFrame = CreateFrame("Frame", "LevelETAClock")
+if C_Timer and C_Timer.NewTicker and GetTime then
+  local last = GetTime()
+  C_Timer.NewTicker(1, function() local now = GetTime(); tick(now - last); last = now end)
+else
+  local a = 0
+  clockFrame:SetScript("OnUpdate", function(_, el) a = a + el; if a >= 1 then tick(a); a = 0 end end)
+end
 
 -- ---------- kommandoer ----------
 SLASH_LEVELETA1 = "/leveleta"
