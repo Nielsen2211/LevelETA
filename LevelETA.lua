@@ -458,17 +458,18 @@ local function points() return {DB.sleepStart, DB.sleepEnd, DB.breakStart, (DB.b
 -- gaa gennem kalenderen i bidder mellem sengetid, opvaagning og pause
 local function walk(t, fn)
   local pts = points()
+  local d = date("*t", math.floor(t))  -- klokken slaas kun op een gang, resten regnes
+  local m, sec = d.hour * 60 + d.min, d.sec
   for _ = 1, 3000 do
-    local d = date("*t", math.floor(t))
-    local m = d.hour * 60 + d.min
     local delta = 1440
     for _, p in ipairs(pts) do
       local x = (p - m) % 1440
       if x > 0 and x < delta then delta = x end
     end
-    local chunk = delta * 60 - d.sec
+    local chunk = delta * 60 - sec
     if fn(t, m, chunk) then return end
     t = t + chunk
+    m, sec = (m + delta) % 1440, 0
   end
 end
 
@@ -512,6 +513,8 @@ local function fs(parent, font, size)
   t:SetShadowOffset(0, 0)
   if t.SetWordWrap then t:SetWordWrap(false) end
   if t.SetMaxLines then t:SetMaxLines(1) end
+  local set = t.SetText  -- skriv kun ny tekst, naar den faktisk er ny (spillet slipper for at tegne teksten om)
+  t.SetText = function(self, s) if self._txt ~= s then self._txt = s; set(self, s) end end
   return t
 end
 
@@ -756,7 +759,11 @@ local function layoutChips(store)
   for _, c in ipairs(store) do
     if c:IsShown() then
       local w = c.isz + 4 + (c.pct:GetStringWidth() or 0) + 3 + (c.time:GetStringWidth() or 0)
-      c:SetWidth(w); c:ClearAllPoints(); c:SetPoint("LEFT", store.parent, "TOPLEFT", x, store.y); x = x + w + store.gap
+      if c._w ~= w or c._x ~= x or c._y ~= store.y or c._p ~= store.parent then  -- flyt kun naar noget er aendret
+        c._w, c._x, c._y, c._p = w, x, store.y, store.parent
+        c:SetWidth(w); c:ClearAllPoints(); c:SetPoint("LEFT", store.parent, "TOPLEFT", x, store.y)
+      end
+      x = x + w + store.gap
     end
   end
 end
@@ -882,7 +889,13 @@ for i = 1, 5 do
   c.value = fs(bar, F_BOLD, 11)
   stats[i] = c
 end
+local lastStats
 local function layoutStats(items)
+  local parts = {}
+  for i, it in ipairs(items) do parts[i] = it[1] .. "=" .. it[2] end
+  local key = table.concat(parts, "|")
+  if key == lastStats then return end  -- samme tal som sidst: intet at flytte
+  lastStats = key
   local widths, total = {}, 0
   for i, it in ipairs(items) do
     local c = stats[i]
@@ -909,6 +922,7 @@ local function layoutStats(items)
   for i = #items + 1, #stats do stats[i].dot:Hide(); stats[i].label:Hide(); stats[i].value:Hide() end
 end
 local function hideStats()
+  lastStats = nil
   for _, c in ipairs(stats) do c.dot:Hide(); c.label:Hide(); c.value:Hide() end
 end
 
@@ -1372,6 +1386,7 @@ local function refresh()
   local est
   if not r then r, est = shortRate() end
   head = head or headStart(r)
+  INFO.r = r
   updateBar(r, head)
   if bar:IsShown() then updateActivity(rL or longRate(r, est), head) end
   if DB.hideBlizz then applyBlizz() end  -- billigt: saetter kun alpha igen, hvis spillet har aendret den
@@ -1849,7 +1864,9 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
     local cut = DB.play - WINDOW * 2
     while DB.samples[1] and DB.samples[1].p < cut do table.remove(DB.samples, 1) end
     lastXP, lastMax, lastLevel, lastEx = xp, mx, lvl, ex
-    refresh()
+    -- baren opdateres med det samme; resten (tider, vindue, aktivitet) samles og regnes hoejst hvert 2. sekund
+    if INFO.r then updateBar(INFO.r, headStart(INFO.r)) else refresh() end
+    acc = math.max(acc, 8)
   end
 end)
 
@@ -1868,7 +1885,7 @@ CreateFrame("Frame", "LevelETAClock"):SetScript("OnUpdate", function(_, el)
     actAcc = 0
   end
   acc = acc + el
-  if acc >= 5 then acc = 0; refresh() end
+  if acc >= 10 then acc = 0; refresh() end
 end)
 
 -- ---------- kommandoer ----------
