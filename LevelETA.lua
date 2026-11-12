@@ -53,7 +53,7 @@ local LOC = {
     tabWindow = "Window", tabBar = "XP bar", tabTime = "Play time", winSec = "Window", rowsSec = "Show in the window",
     showToday = "Level when I stop today", showNext = "Next tenth level", show60 = "Level 60", showBuffsWin = "XP buffs",
     showMinimap = "Minimap button", onBar = "On the bar", showStats = "Numbers under the bar",
-    showBuffsBar = "XP buffs on the bar", setGoal = "Set goal", anim = "Animations and shimmer",
+    showBuffsBar = "XP buffs on the bar", setGoal = "Set goal",
     xphShort = "XP/h", spent = "This level", left = "Next", questsShort = "Quests",
     buffWarn = "Warn when XP buffs run out", leftFmt = "%s left",
     warnSec = "Buff warnings", foodWarn = "Food buff, warn before", bagWarn = "Sleeping bag, warn before", secShort = "sec",
@@ -92,7 +92,7 @@ local LOC = {
     tabWindow = "Vindue", tabBar = "XP-bar", tabTime = "Spilletid", winSec = "Vinduet", rowsSec = "Vis i vinduet",
     showToday = "Level når jeg stopper i dag", showNext = "Næste tiende level", show60 = "Level 60", showBuffsWin = "XP-buffs",
     showMinimap = "Minimap-knap", onBar = "På baren", showStats = "Tal under baren",
-    showBuffsBar = "XP-buffs på baren", setGoal = "Sæt mål", anim = "Animationer og glimmer",
+    showBuffsBar = "XP-buffs på baren", setGoal = "Sæt mål",
     xphShort = "XP/t", spent = "Brugt", left = "Tilbage", questsShort = "Quests",
     buffWarn = "Advar når XP-buffs løber ud", leftFmt = "%s tilbage",
     warnSec = "Buff-advarsler", foodWarn = "Food buff, advar før", bagWarn = "Sovepose, advar før", secShort = "sek",
@@ -113,7 +113,7 @@ local defaults = {
   showBar = true, hideBlizz = true, barScale = 1, questRewards = {},
   showAct = true, act = {}, goalOn = false, goalLevel = 60,
   showToday = true, showNext = true, show60 = true, showBuffsWin = true, showMinimap = true,
-  showStats = true, showBuffsBar = true, anim = true, tab = 1, buffWarn = true, foodWarn = 20, bagWarn = 5,
+  showStats = true, showBuffsBar = true, tab = 1, buffWarn = true, foodWarn = 20, bagWarn = 5,
 }
 
 -- ---------- tid og datoer ----------
@@ -834,7 +834,7 @@ end)
 
 -- oeverste linje: logo, level, buffs ... XP-tal, procent
 local barH = 60
-local kfmt, commas, updateBar, barGain
+local kfmt, commas, updateBar
 do
 local bLogo = bar:CreateTexture(nil, "ARTWORK"); bLogo:SetSize(15, 15); bLogo:SetPoint("LEFT", bar, "TOPLEFT", 12, -14); bLogo:SetTexture(LOGO)
 local bLevel = fs(bar, F_BOLD, 12.5); bLevel:SetPoint("LEFT", bLogo, "RIGHT", 5, 0)
@@ -947,136 +947,6 @@ local function restedPct(mx)
 end
 
 
--- ---------- animationer ----------
--- bjaelken glider hen til ny XP, det nye stykke blinker, kanten gloeder, store portioner XP
--- giver et lysglimt og "+3,200 XP", og rested-delen har et glimmer der loeber hen over den
-local A = {tgt = {cur = 0, quest = 0, rest = 0}, flashA = 0, sparkA = 0.3, shineT = 0}
-local function animTex(layer, sub, w)
-  local t = track:CreateTexture(nil, layer, nil, sub)
-  t:SetTexture(TEX .. "Shine"); t:SetBlendMode("ADD")
-  if w then t:SetWidth(w) end
-  if mask and t.AddMaskTexture then t:AddMaskTexture(mask) end
-  t:Hide()
-  return t
-end
-A.flash = barTex("OVERLAY", 1, 1, 1, 1, 1); A.flash:SetBlendMode("ADD"); A.flash:Hide()
-A.sweep = animTex("OVERLAY", 2)
-A.shine = animTex("ARTWORK", 4); A.shine:SetVertexColor(0.85, 0.93, 1, 0.75)
-A.spark = animTex("OVERLAY", 3, 14)
-A.float = fs(bar, F_BOLD, 13); A.float:SetShadowOffset(1, -1); A.float:SetShadowColor(0, 0, 0, 0.9); A.float:Hide()
-
--- vis kun den del af et lysbaand (fra a, bredde w) der ligger mellem lo og hi
-local function clipBand(t, a, w, lo, hi)
-  local v0, v1 = math.max(a, lo), math.min(a + w, hi)
-  if v1 - v0 < 0.5 then t:Hide(); return end
-  t:SetPoint("TOPLEFT", track, "TOPLEFT", v0, 0); t:SetPoint("BOTTOMLEFT", track, "BOTTOMLEFT", v0, 0)  -- samme ankre: flyttes, ingen ny opsaetning
-  t:SetWidth(v1 - v0)
-  t:SetTexCoord((v0 - a) / w, (v1 - a) / w, 0, 1); t:Show()
-end
-
-local idleAcc = 0
-local SHINE_EVERY = 8  -- et glimmer hen over rested hvert 8. sekund
-local function near(a, b) return math.abs(a - b) < 0.0004 end
-bar:SetScript("OnUpdate", function(_, dt)
-  if not A.cur then return end
-  local tg = A.tgt
-  local moving = A.dirty or not near(tg.cur, A.cur) or not near(tg.quest, A.quest) or not near(tg.rest, A.rest)
-  local busy = moving or A.flashA > 0 or A.sweepT or A.floatT or A.sparkA > 0.3
-  local qEnd = math.max(A.cur, A.quest)
-  local rEnd = math.max(qEnd, A.rest)
-  local fx = DB.anim ~= false
-  if not busy then
-    if not fx or rEnd - qEnd < 0.004 then return end  -- intet at tegne
-    idleAcc = idleAcc + dt
-    if A.shineT >= 1.4 and A.shineT + idleAcc < SHINE_EVERY then return end  -- pause mellem glimmer: intet arbejde
-    if idleAcc < 0.033 then return end      -- glimmeret: 30 billeder i sekundet er nok
-    dt, idleAcc = idleAcc, 0
-  end
-  if moving then
-    local k = fx and math.min(1, dt * 5) or 1  -- uden effekter: hop direkte
-    A.cur = near(tg.cur, A.cur) and tg.cur or A.cur + (tg.cur - A.cur) * k
-    A.quest = near(tg.quest, A.quest) and tg.quest or A.quest + (tg.quest - A.quest) * k
-    A.rest = near(tg.rest, A.rest) and tg.rest or A.rest + (tg.rest - A.rest) * k
-    qEnd = math.max(A.cur, A.quest)
-    rEnd = math.max(qEnd, A.rest)
-    setSeg(segCur, 0, A.cur); setSeg(segQuest, A.cur, qEnd); setSeg(segRest, qEnd, rEnd)
-    A.dirty = false
-  end
-  local fillX = TRW * A.cur
-  -- det nye stykke blinker og falmer
-  if A.flashA > 0 then
-    A.flashA = math.max(0, A.flashA - dt * 1.3)
-    setSeg(A.flash, math.min(A.flashFrom, A.cur), A.cur); A.flash:SetAlpha(A.flashA * 0.55)
-    if A.flashA <= 0 then A.flash:Hide() end
-  end
-  -- gloed i kanten af bjaelken, pulserer naar du faar XP
-  if moving or A.sparkA > 0.3 then
-    A.sparkA = math.max(0.3, A.sparkA - dt * 1.5)
-    if A.cur > 0.01 and A.cur < 0.995 then clipBand(A.spark, fillX - 10, 14, 0, fillX + 2); A.spark:SetAlpha(A.sparkA) else A.spark:Hide() end
-  end
-  -- lysglimt hen over den fyldte del ved store portioner XP
-  if A.sweepT then
-    A.sweepT = A.sweepT + dt
-    local p = A.sweepT / 0.8
-    if p >= 1 then A.sweepT = nil; A.sweep:Hide()
-    else clipBand(A.sweep, -70 + (fillX + 70) * p, 70, 0, fillX); A.sweep:SetAlpha(0.8) end
-  end
-  -- glimmer hen over rested-delen hvert par sekunder
-  local r0, r1 = TRW * qEnd, TRW * rEnd
-  if fx and r1 - r0 > 2 then
-    A.shineT = (A.shineT + dt) % SHINE_EVERY
-    local p = A.shineT / 1.4
-    if p <= 1 then clipBand(A.shine, r0 - 36 + (r1 - r0 + 36) * p, 36, r0, r1)
-    elseif A.shine:IsShown() then A.shine:Hide() end
-  elseif A.shine:IsShown() then
-    A.shine:Hide()
-  end
-  -- svaevende tekst ("+3,200 XP" eller "Level 46!")
-  if A.floatT then
-    A.floatT = A.floatT + dt
-    local p = A.floatT / 1.8
-    if p >= 1 then A.floatT = nil; A.float:Hide()
-    else
-      local e = 1 - (1 - p) * (1 - p)
-      A.float:SetAlpha(p < 0.12 and p / 0.12 or math.max(0, 1 - (p - 0.5) / 0.5))
-      A.float:ClearAllPoints()
-      A.float:SetPoint("CENTER", bar, "TOPLEFT", math.max(40, math.min(BW - 40, 12 + A.floatX)), A.floatY + A.floatDir * 16 * e)
-    end
-  end
-end)
-
--- kaldes naar du faar XP: gain, om det var en quest, om du dingede
-barGain = function(gain, mx, quest, leveled, lvl)
-  if not bar:IsShown() or not A.cur or not mx or mx <= 0 then return end
-  A.dirty = true
-  if DB.anim == false then  -- effekter slaaet fra: baren hopper bare
-    if leveled then A.cur, A.quest, A.rest = 0, 0, 0 end
-    return
-  end
-  A.sparkA = 1
-  if leveled then
-    A.cur, A.quest, A.rest = 0, 0, 0
-    A.flashFrom, A.flashA = 0, 1
-    A.sweepT = 0
-    A.float:SetText(T("level") .. " " .. lvl .. "!"); A.float:SetTextColor(1, 0.82, 0.29)
-  else
-    A.flashFrom, A.flashA = A.cur, 0.9
-    if not quest and gain < mx * 0.03 then return end  -- et almindeligt kill: kun blink og gloed
-    A.sweepT = 0
-    A.float:SetText("+" .. commas(gain) .. " XP")
-    if quest then A.float:SetTextColor(1, 0.82, 0.29) else A.float:SetTextColor(0.62, 0.82, 1) end
-  end
-  -- teksten svaever vaek fra skaermkanten: ned hvis baren sidder i toppen, ellers op
-  local _, cy = bar:GetCenter()
-  local sh = UIParent and UIParent.GetHeight and UIParent:GetHeight()
-  local top = cy and sh and cy > sh / 2
-  A.floatDir = top and -1 or 1
-  A.floatY = top and -(barH + 10) or 10
-  A.floatX = TRW * A.tgt.cur
-  A.floatT = 0
-  A.float:SetAlpha(0); A.float:Show()
-end
-
 updateBar = function(r, head)
   if not DB.showBar or UnitLevel("player") >= MAXLVL then bar:Hide(); return end
   if bar._scale ~= DB.barScale then bar._scale = DB.barScale; bar:SetScale(DB.barScale) end
@@ -1090,9 +960,11 @@ updateBar = function(r, head)
   bXP:SetText(kfmt(xp) .. " / " .. kfmt(mx) .. " XP")
   local q = math.min(questXP(), mx - xp)
   local rs = math.min(restedXP(), math.max(0, mx - xp - q))
-  A.tgt.cur, A.tgt.quest, A.tgt.rest = xp / mx, (xp + q) / mx, (xp + q + rs) / mx
-  if not A.cur then A.cur, A.quest, A.rest = A.tgt.cur, A.tgt.quest, A.tgt.rest end  -- foerste gang: ingen animation
-  A.dirty = true
+  local c1, c2, c3 = xp / mx, (xp + q) / mx, (xp + q + rs) / mx
+  if bar._c1 ~= c1 or bar._c2 ~= c2 or bar._c3 ~= c3 then  -- flyt kun bjaelken naar XP har aendret sig
+    bar._c1, bar._c2, bar._c3 = c1, c2, c3
+    setSeg(segCur, 0, c1); setSeg(segQuest, c1, c2); setSeg(segRest, c2, c3)
+  end
   placeChips(bar, barChips, DB.showBuffsBar and activeBuffs() or {}, 12 + 15 + 5 + (bLevel:GetStringWidth() or 55) + 12, -14, true)
   if not DB.showStats then hideStats(); return end
 
@@ -1648,8 +1520,7 @@ section(-92, "onBar")
 toggle(-114, "showStats", function() return DB.showStats end, function(v) DB.showStats = v end)
 toggle(-142, "showBuffsBar", function() return DB.showBuffsBar end, function(v) DB.showBuffsBar = v end)
 toggle(-170, "showAct", function() return DB.showAct end, function(v) DB.showAct = v end)
-toggle(-198, "anim", function() return DB.anim end, function(v) DB.anim = v end)
-local goalBtn = pill("", 120); goalBtn:SetPoint("TOPLEFT", COL + 18, -234); label(goalBtn.text, "setGoal")
+local goalBtn = pill("", 120); goalBtn:SetPoint("TOPLEFT", COL + 18, -206); label(goalBtn.text, "setGoal")
 
 -- fane 3: spilletid, quests og rested
 host = pages[3]
@@ -1959,7 +1830,6 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
     while DB.samples[1] and DB.samples[1].p < cut do table.remove(DB.samples, 1) end
     lastXP, lastMax, lastLevel, lastEx = xp, mx, lvl, ex
     refresh()
-    if gain > 0 then barGain(gain, mx, clock() - lastQuestAt < 2, leveled, lvl) end
   end
 end)
 
