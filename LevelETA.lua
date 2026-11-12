@@ -1791,7 +1791,11 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
       DB.ptimes[UnitLevel("player")] = total - atLevel  -- praecis start paa dette level
     end
   elseif event == "PLAYER_LEVEL_UP" then
-    if C_Timer and C_Timer.After then C_Timer.After(2, requestPlayed) end
+    questDirty = true  -- quests giver mindre XP, naar du er et level hoejere: regn dem igen
+    if C_Timer and C_Timer.After then
+      C_Timer.After(2, requestPlayed)
+      C_Timer.After(1, function() questDirty = true; refresh() end)  -- spillet opdaterer quest-XP lidt efter dinget
+    end
   elseif event == "QUEST_LOG_UPDATE" then
     questDirty = true
   elseif event == "UNIT_AURA" then
