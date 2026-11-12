@@ -39,7 +39,7 @@ LevelETA comes with an XP bar and XP tracker in the same style. It shows your XP
 
 Next to the XP bar is a small **activity bar**. It shows how much of the last 10 minutes you were active (fighting, earning XP or turning in quests). Hover it to see how your time on this level and this session splits into fighting and questing, travelling, flying, town, AFK and dead.
 
-Click the activity bar (or type `/lp goal`) to set a **goal**, for example level 60 before Monday 05:00. A white line on the activity bar then shows how active you need to be to make it, based on your pace and your play schedule. The bar turns green when you are above the line and red when you are below. The tooltip shows when you will reach the goal at your current pace and how far ahead or behind you are.
+Click the activity bar (or type `/lp goal`) to set a **goal**, for example level 60 before Monday 05:00. A white line on the activity bar then shows how active you need to be to make it, based on your pace and your play schedule. Without a goal, the line shows how active you normally are (the last couple of hours). The bar turns green when you are above the line and red when you are below. The tooltip shows when you will reach the goal at your current pace and how far ahead or behind you are.
 
 When you have an XP buff, it is also shown in the window under the three rows.
 
@@ -107,7 +107,7 @@ Left click the minimap button to show or hide the window.
 
 LevelETA viser, hvilket level du er på, når du stopper med at spille i dag, hvornår du rammer dit næste tiende level, og hvornår du rammer level 60.
 
-Den virker helt alene og bruger `/played` og sine egne målinger. Er ForeverXP Bar installeret, bruger den også dens levelhistorik, så den er præcis fra første dag. Indstillinger: højreklik på minimap-knappen eller skriv `/lp`. Sproget kan skiftes til dansk i indstillingerne, og alle dele kan slås til og fra hver for sig. Under fanen Vindue kan du slå level-tider til og se, hvor lang tid dine sidste levels tog. Du vælger selv, hvor mange levels listen viser. Under fanen XP-bar kan du slå en XP-bar til i samme stil og skjule Blizzards egen. Ved siden af baren viser en lille bjælke, hvor aktiv du er. Klik på den for at sætte et mål, så viser en hvid streg, hvor aktiv du skal være for at nå det.
+Den virker helt alene og bruger `/played` og sine egne målinger. Er ForeverXP Bar installeret, bruger den også dens levelhistorik, så den er præcis fra første dag. Indstillinger: højreklik på minimap-knappen eller skriv `/lp`. Sproget kan skiftes til dansk i indstillingerne, og alle dele kan slås til og fra hver for sig. Under fanen Vindue kan du slå level-tider til og se, hvor lang tid dine sidste levels tog. Du vælger selv, hvor mange levels listen viser. Under fanen XP-bar kan du slå en XP-bar til i samme stil og skjule Blizzards egen. Ved siden af baren viser en lille bjælke, hvor aktiv du er. Klik på den for at sætte et mål, så viser en hvid streg, hvor aktiv du skal være for at nå det. Uden et mål viser stregen, hvor aktiv du plejer at være. Bjælken er grøn over stregen og rød under.
 
 ---
 

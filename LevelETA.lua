@@ -1177,7 +1177,9 @@ if vmask then
   if vbg.AddMaskTexture then vbg:AddMaskTexture(vmask) end
   if vfill.AddMaskTexture then vfill:AddMaskTexture(vmask) end
 end
-local vmark = box:CreateTexture(nil, "OVERLAY"); vmark:SetSize(14, 2); vmark:SetColorTexture(1, 1, 1, 0.92)
+-- stregen ligger paa bjaelkens egen ramme, saa den tegnes oven paa fyldet (en mørk kant goer den tydelig)
+local vmarkBg = vt:CreateTexture(nil, "OVERLAY", nil, 6); vmarkBg:SetSize(18, 4); vmarkBg:SetColorTexture(0, 0, 0, 0.85)
+local vmark = vt:CreateTexture(nil, "OVERLAY", nil, 7); vmark:SetSize(16, 2); vmark:SetColorTexture(1, 1, 1, 1)
 local vtext = fs(box, F_BOLD, 10); vtext:SetPoint("CENTER", box, "TOP", 0, -83)
 
 local GREEN, YELLOW, RED = {0.47, 0.86, 0.59}, {1, 0.82, 0.29}, {1, 0.42, 0.42}
@@ -1193,13 +1195,14 @@ updateActivity = function(rL, head)
   local g = goalInfo(rL, head)
   lastGoal = g
   local col
-  if g and not g.done then
-    col = (g.req <= 1 and v >= g.req) and GREEN or RED
-    vmark:ClearAllPoints(); vmark:SetPoint("CENTER", vt, "BOTTOM", 0, VH * math.min(1, g.req)); vmark:Show()
-  else
-    col = (g and g.done) and GREEN or (v >= 0.75 and GREEN) or (v >= 0.5 and YELLOW) or RED
-    vmark:Hide()
-  end
+  -- stregen: med et maal er det hvor aktiv du skal vaere, ellers dit normale niveau (de sidste ca. 2 timer)
+  local line
+  if g and not g.done then line = g.req else line = DB.actLong or v end
+  if g and g.done then col = GREEN
+  else col = (line <= 1 and v >= line) and GREEN or RED end
+  local ly = VH * math.max(0.02, math.min(1, line))
+  vmark:ClearAllPoints(); vmark:SetPoint("CENTER", vt, "BOTTOM", 0, ly); vmark:SetShown(not (g and g.done))
+  vmarkBg:ClearAllPoints(); vmarkBg:SetPoint("CENTER", vmark); vmarkBg:SetShown(vmark:IsShown())
   vfill:SetHeight(math.max(1, VH * math.max(0, math.min(1, v))))
   vfill:SetColorTexture(col[1], col[2], col[3], 0.92)
   vtext:SetText(math.floor(v * 100 + 0.5) .. "%"); vtext:SetTextColor(col[1], col[2], col[3])
