@@ -772,20 +772,29 @@ end
 
 -- hvert billede: blink naar en buff er ved at loebe ud; hvert sekund: ny tid
 local chipAcc, blinkT = 0, 0
+local anySoon = false
+local stores = {winChips, barChips}
 tickChips = function(dt)
-  blinkT = blinkT + dt
-  local pulse = 0.55 + 0.45 * math.abs(math.sin(blinkT * 3))
   chipAcc = chipAcc + dt
-  local second = chipAcc >= 1
-  if second then chipAcc = 0 end
-  for _, store in ipairs({winChips, barChips}) do
-    for _, c in ipairs(store) do
-      if c:IsShown() then
-        if second then chipTime(c) end
-        c:SetAlpha(c.soon and pulse or 1)
+  if chipAcc >= 1 then  -- hvert sekund: ny tid
+    chipAcc, anySoon = 0, false
+    for _, store in ipairs(stores) do
+      if store[1] then
+        for _, c in ipairs(store) do
+          if c:IsShown() then
+            chipTime(c)
+            if c.soon then anySoon = true else c:SetAlpha(1) end
+          end
+        end
+        layoutChips(store)
       end
     end
-    if second then layoutChips(store) end
+  end
+  if not anySoon then return end
+  blinkT = blinkT + dt  -- kun naar noget er ved at loebe ud: blink i hvert billede
+  local pulse = 0.55 + 0.45 * math.abs(math.sin(blinkT * 3))
+  for _, store in ipairs(stores) do
+    for _, c in ipairs(store) do if c.soon and c:IsShown() then c:SetAlpha(pulse) end end
   end
 end
 
@@ -945,15 +954,31 @@ local function clipBand(t, a, w, lo, hi)
   t:SetTexCoord((v0 - a) / w, (v1 - a) / w, 0, 1); t:Show()
 end
 
+local idleAcc = 0
+local function near(a, b) return math.abs(a - b) < 0.0004 end
 bar:SetScript("OnUpdate", function(_, dt)
   if not A.cur then return end
-  local T, k = A.tgt, math.min(1, dt * 5)
-  A.cur = A.cur + (T.cur - A.cur) * k
-  A.quest = A.quest + (T.quest - A.quest) * k
-  A.rest = A.rest + (T.rest - A.rest) * k
+  local tg = A.tgt
+  local moving = A.dirty or not near(tg.cur, A.cur) or not near(tg.quest, A.quest) or not near(tg.rest, A.rest)
+  local busy = moving or A.flashA > 0 or A.sweepT or A.floatT or A.sparkA > 0.3
   local qEnd = math.max(A.cur, A.quest)
   local rEnd = math.max(qEnd, A.rest)
-  setSeg(segCur, 0, A.cur); setSeg(segQuest, A.cur, qEnd); setSeg(segRest, qEnd, rEnd)
+  if not busy then
+    if rEnd - qEnd < 0.004 then return end  -- intet at tegne
+    idleAcc = idleAcc + dt                  -- kun glimmeret koerer: 30 billeder i sekundet er nok
+    if idleAcc < 0.033 then return end
+    dt, idleAcc = idleAcc, 0
+  end
+  if moving then
+    local k = math.min(1, dt * 5)
+    A.cur = near(tg.cur, A.cur) and tg.cur or A.cur + (tg.cur - A.cur) * k
+    A.quest = near(tg.quest, A.quest) and tg.quest or A.quest + (tg.quest - A.quest) * k
+    A.rest = near(tg.rest, A.rest) and tg.rest or A.rest + (tg.rest - A.rest) * k
+    qEnd = math.max(A.cur, A.quest)
+    rEnd = math.max(qEnd, A.rest)
+    setSeg(segCur, 0, A.cur); setSeg(segQuest, A.cur, qEnd); setSeg(segRest, qEnd, rEnd)
+    A.dirty = false
+  end
   local fillX = TRW * A.cur
   -- det nye stykke blinker og falmer
   if A.flashA > 0 then
@@ -962,8 +987,10 @@ bar:SetScript("OnUpdate", function(_, dt)
     if A.flashA <= 0 then A.flash:Hide() end
   end
   -- gloed i kanten af bjaelken, pulserer naar du faar XP
-  A.sparkA = math.max(0.3, A.sparkA - dt * 1.5)
-  if A.cur > 0.01 and A.cur < 0.995 then clipBand(A.spark, fillX - 10, 14, 0, fillX + 2); A.spark:SetAlpha(A.sparkA) else A.spark:Hide() end
+  if moving or A.sparkA > 0.3 then
+    A.sparkA = math.max(0.3, A.sparkA - dt * 1.5)
+    if A.cur > 0.01 and A.cur < 0.995 then clipBand(A.spark, fillX - 10, 14, 0, fillX + 2); A.spark:SetAlpha(A.sparkA) else A.spark:Hide() end
+  end
   -- lysglimt hen over den fyldte del ved store portioner XP
   if A.sweepT then
     A.sweepT = A.sweepT + dt
@@ -998,6 +1025,7 @@ end)
 barGain = function(gain, mx, quest, leveled, lvl)
   if not bar:IsShown() or not A.cur or not mx or mx <= 0 then return end
   A.sparkA = 1
+  A.dirty = true
   if leveled then
     A.cur, A.quest, A.rest = 0, 0, 0
     A.flashFrom, A.flashA = 0, 1
@@ -1035,6 +1063,7 @@ updateBar = function(r, head)
   local rs = math.min(restedXP(), math.max(0, mx - xp - q))
   A.tgt.cur, A.tgt.quest, A.tgt.rest = xp / mx, (xp + q) / mx, (xp + q + rs) / mx
   if not A.cur then A.cur, A.quest, A.rest = A.tgt.cur, A.tgt.quest, A.tgt.rest end  -- foerste gang: ingen animation
+  A.dirty = true
   placeChips(bar, barChips, DB.showBuffsBar and activeBuffs() or {}, 12 + 15 + 5 + (bLevel:GetStringWidth() or 55) + 12, -14, true)
   if not DB.showStats then hideStats(); return end
 
@@ -1403,7 +1432,6 @@ local function refresh()
   if not DB then return end
   if buffsDirty then scanBuffs() end
   f:SetScale(DB.scale)
-  updateLabels()
   for _, c in ipairs(rows) do c:Hide() end
   local y, r, head, rL = mainRows(-44)
   local list = DB.showBuffsWin and activeBuffs() or {}
@@ -1767,7 +1795,7 @@ f:RegisterEvent("PLAYER_LEVEL_UP")
 f:RegisterEvent("QUEST_LOG_UPDATE")
 f:RegisterEvent("UPDATE_EXHAUSTION")
 f:RegisterEvent("TIME_PLAYED_MSG")
-f:RegisterEvent("UNIT_AURA")
+if f.RegisterUnitEvent then f:RegisterUnitEvent("UNIT_AURA", "player") else f:RegisterEvent("UNIT_AURA") end
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
 f:RegisterEvent("PLAYER_DEAD")
 f:RegisterEvent("QUEST_TURNED_IN")
@@ -1800,6 +1828,7 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
     LevelETADB = LevelETADB or {}
     DB = LevelETADB
     for k, v in pairs(defaults) do if DB[k] == nil then DB[k] = v end end
+    updateLabels()  -- sproget kendes foerst nu
     if not DB.sessionStart then DB.sessionStart = DB.play end
     if DB.calcVer ~= 7 then DB.eS, DB.eL, DB.calcVer = nil, nil, 7 end  -- smid gamle udglattede tempi ud
     if (DB.defVer or 0) < 2 then DB.showBar, DB.hideBlizz, DB.defVer = true, true, 2 end  -- XP-baren er nu slaaet til som standard
@@ -1912,5 +1941,17 @@ SlashCmdList.LEVELETA = function(msg)
   msg = (msg or ""):lower()
   if msg == "vis" or msg == "show" then toggleWindow()
   elseif msg == "goal" or msg == "mål" or msg == "maal" then toggleGoal()
+  elseif msg == "perf" then
+    local P, M = C_AddOnProfiler, Enum and Enum.AddOnProfilerMetric
+    local function get(fn, ...) local ok, v = pcall(fn, ...); return ok and type(v) == "number" and v or nil end
+    if P and P.GetAddOnMetric and M then
+      local avg = get(P.GetAddOnMetric, ADDON, M.RecentAverageTime)
+      local peak = get(P.GetAddOnMetric, ADDON, M.PeakTime)
+      local all = P.GetOverallMetric and get(P.GetOverallMetric, M.RecentAverageTime)
+      print(string.format("|cffffd24aLevelETA|r: %.3f ms / frame (avg), peak %.2f ms. All addons: %s ms / frame",
+        avg or 0, peak or 0, all and string.format("%.3f", all) or "?"))
+    else
+      print("|cffffd24aLevelETA|r: this game version has no addon timing (C_AddOnProfiler).")
+    end
   else toggleSettings() end
 end
