@@ -55,6 +55,9 @@ local LOC = {
     showMinimap = "Minimap button", onBar = "On the bar", showStats = "Numbers under the bar",
     showBuffsBar = "XP buffs on the bar", setGoal = "Set goal",
     xphShort = "XP/h", spent = "This level", left = "Next", questsShort = "Quests",
+    buffWarn = "Warn when XP buffs run out", leftFmt = "%s left",
+    foodSoon = "Food buff is running out", foodGone = "Food buff ran out", foodAgain = "Eat again to keep +5% XP from kills",
+    bagSoon = "Sleeping bag buff is running out", bagGone = "Sleeping bag buff ran out", bagAgain = "Use the sleeping bag again for up to +3% XP",
   },
   da = {
     level = "Level", today = "I dag kl. %s", tomorrow = "I morgen kl. %s",
@@ -90,6 +93,9 @@ local LOC = {
     showMinimap = "Minimap-knap", onBar = "På baren", showStats = "Tal under baren",
     showBuffsBar = "XP-buffs på baren", setGoal = "Sæt mål",
     xphShort = "XP/t", spent = "Brugt", left = "Tilbage", questsShort = "Quests",
+    buffWarn = "Advar når XP-buffs løber ud", leftFmt = "%s tilbage",
+    foodSoon = "Food buff løber snart ud", foodGone = "Food buff er løbet ud", foodAgain = "Spis igen for at beholde +5% XP fra kills",
+    bagSoon = "Sovepose-buff løber snart ud", bagGone = "Sovepose-buff er løbet ud", bagAgain = "Brug soveposen igen for op til +3% XP",
   },
 }
 local function T(k) return (LOC[(DB and DB.lang) or "en"] or LOC.en)[k] end
@@ -105,7 +111,7 @@ local defaults = {
   showBar = true, hideBlizz = true, barScale = 1, questRewards = {},
   showAct = true, act = {}, goalOn = false, goalLevel = 60,
   showToday = true, showNext = true, show60 = true, showBuffsWin = true, showMinimap = true,
-  showStats = true, showBuffsBar = true, tab = 1,
+  showStats = true, showBuffsBar = true, tab = 1, buffWarn = true,
 }
 
 -- ---------- tid og datoer ----------
@@ -691,10 +697,12 @@ end
 local FOOD_ICON = "Interface\\Icons\\Spell_Misc_Food"
 local BAG_ICON = "Interface\\Icons\\INV_Drink_15"
 
+local FOOD_SOON, BAG_SOON = 60, 300  -- advar 1 min foer food buff og 5 min foer soveposen loeber ud
 local function activeBuffs()
   local list = {}
-  if fedLeft() > 0 then list[#list + 1] = {icon = buffs.fedIcon or FOOD_ICON, pct = "+5%", left = fedLeft()} end
-  if bagLeft() > 0 then list[#list + 1] = {icon = buffs.bagIcon or BAG_ICON, pct = "+" .. (buffs.bagStacks or 1) .. "%", left = bagLeft()} end
+  local f, b = fedLeft(), bagLeft()
+  if f > 0 then list[#list + 1] = {icon = buffs.fedIcon or FOOD_ICON, pct = "+5%", left = f, soon = f <= FOOD_SOON} end
+  if b > 0 then list[#list + 1] = {icon = buffs.bagIcon or BAG_ICON, pct = "+" .. (buffs.bagStacks or 1) .. "%", left = b, soon = b <= BAG_SOON} end
   return list
 end
 
@@ -711,6 +719,8 @@ local function placeChips(parent, store, list, x, y, small)
       store[i] = c
     end
     c.icon:SetTexture(b.icon); c.pct:SetText(b.pct); c.time:SetText(dur(b.left))
+    c.soon = b.soon
+    if b.soon then c.time:SetTextColor(1, 0.6, 0.35) else c.time:SetTextColor(0.55, 0.58, 0.64) end
     local w = isz + 4 + (c.pct:GetStringWidth() or 0) + 3 + (c.time:GetStringWidth() or 0)
     c:SetWidth(w); c:ClearAllPoints(); c:SetPoint("LEFT", parent, "TOPLEFT", x, y); c:Show()
     x = x + w + (small and 10 or 14)
@@ -874,6 +884,10 @@ local function clipBand(t, a, w, lo, hi)
 end
 
 bar:SetScript("OnUpdate", function(_, dt)
+  A.blinkT = (A.blinkT or 0) + dt
+  local pulse = 0.55 + 0.45 * math.abs(math.sin(A.blinkT * 3))
+  for _, c in ipairs(barChips) do c:SetAlpha(c.soon and pulse or 1) end
+  for _, c in ipairs(winChips) do c:SetAlpha(c.soon and pulse or 1) end
   if not A.cur then return end
   local T, k = A.tgt, math.min(1, dt * 5)
   A.cur = A.cur + (T.cur - A.cur) * k
@@ -1232,6 +1246,54 @@ box:SetScript("OnEnter", function(self)
 end)
 box:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+-- ---------- advarsel naar en XP-buff er ved at loebe ud ----------
+local checkBuffWarnings
+do
+  local toast = CreateFrame("Button", "LevelETAToast", UIParent)
+  toast:SetSize(260, 48); toast:SetPoint("TOP", UIParent, "TOP", 0, -150); toast:SetFrameStrata("HIGH"); toast:Hide()
+  skin(toast, "Panel", 520, 1024)
+  local icon = toast:CreateTexture(nil, "ARTWORK"); icon:SetSize(26, 26); icon:SetPoint("LEFT", 12, 0)
+  icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+  local title = fs(toast, F_BOLD, 13); title:SetPoint("TOPLEFT", 48, -9); title:SetTextColor(1, 0.82, 0.29)
+  local sub = fs(toast, F_SEMI, 11); sub:SetPoint("TOPLEFT", 48, -27); sub:SetTextColor(0.75, 0.78, 0.84)
+  local t = 0
+  toast:SetScript("OnClick", function() toast:Hide() end)
+  toast:SetScript("OnUpdate", function(self, dt)
+    t = t + dt
+    local a = t < 0.25 and t / 0.25 or (t > 6 and math.max(0, 1 - (t - 6)) or 1)
+    self:SetAlpha(a)
+    icon:SetAlpha(0.6 + 0.4 * math.abs(math.sin(t * 3)))
+    if t > 7 then self:Hide() end
+  end)
+  local function show(tex, head, text)
+    icon:SetTexture(tex); title:SetText(head); sub:SetText(text)
+    t = 0; toast:SetAlpha(0); toast:Show()
+    if PlaySound then pcall(PlaySound, (SOUNDKIT and SOUNDKIT.TELL_MESSAGE) or 3081) end
+  end
+
+  local seen, warned = {}, {}
+  local function check(key, untilT, soon, tex, prefix)
+    local now = clock()
+    if untilT and untilT > now then
+      seen[key] = untilT
+      local left = untilT - now
+      if left <= soon and warned[key] ~= untilT then
+        warned[key] = untilT
+        show(tex, T(prefix .. "Soon"), string.format(T("leftFmt"), dur(left)))
+      end
+    elseif seen[key] then
+      -- buffen er vaek: advar kun hvis tiden var gaaet, ikke hvis du doede
+      if now >= seen[key] - 3 then show(tex, T(prefix .. "Gone"), T(prefix .. "Again")) end
+      seen[key] = nil
+    end
+  end
+  checkBuffWarnings = function()
+    if not DB.buffWarn then return end
+    check("fed", buffs.fedUntil, FOOD_SOON, buffs.fedIcon or FOOD_ICON, "food")
+    check("bag", buffs.bagUntil, BAG_SOON, buffs.bagIcon or BAG_ICON, "bag")
+  end
+end
+
 -- de tre faste raekker
 local function mainRows(y)
   local lvl = UnitLevel("player")
@@ -1444,7 +1506,8 @@ section(-92, "onBar")
 toggle(-114, "showStats", function() return DB.showStats end, function(v) DB.showStats = v end)
 toggle(-142, "showBuffsBar", function() return DB.showBuffsBar end, function(v) DB.showBuffsBar = v end)
 toggle(-170, "showAct", function() return DB.showAct end, function(v) DB.showAct = v end)
-local goalBtn = pill("", 120); goalBtn:SetPoint("TOPLEFT", COL + 18, -206); label(goalBtn.text, "setGoal")
+toggle(-198, "buffWarn", function() return DB.buffWarn end, function(v) DB.buffWarn = v end)
+local goalBtn = pill("", 120); goalBtn:SetPoint("TOPLEFT", COL + 18, -234); label(goalBtn.text, "setGoal")
 
 -- fane 3: spilletid, quests og rested
 host = pages[3]
@@ -1757,12 +1820,16 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
 end)
 
 local actAcc = 0
-f:SetScript("OnUpdate", function(_, el)
+-- uret koerer paa sin egen usynlige ramme, saa spilletid, aktivitet og advarsler taeller med,
+-- ogsaa naar vinduet er skjult (fx naar man kun bruger XP-baren)
+CreateFrame("Frame", "LevelETAClock"):SetScript("OnUpdate", function(_, el)
   if not DB then return end
   DB.play = DB.play + el
   actAcc = actAcc + el
   if actAcc >= 1 then
     if actAcc <= 5 then sampleActivity(actAcc) end  -- lange pauser (loadskaerm) taeller ikke
+    if buffsDirty then scanBuffs() end
+    checkBuffWarnings()
     actAcc = 0
   end
   acc = acc + el
