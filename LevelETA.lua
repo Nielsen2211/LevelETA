@@ -757,7 +757,6 @@ placeChips = function(parent, store, list, x, y, small)
     if not c then
       c = CreateFrame("Frame", nil, parent); c:SetHeight(16)
       c.icon = c:CreateTexture(nil, "ARTWORK"); c.icon:SetSize(isz, isz); c.icon:SetPoint("LEFT")
-      c.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
       c.pct = fs(c, F_BOLD, fsz); c.pct:SetPoint("LEFT", c.icon, "RIGHT", 4, 0); c.pct:SetTextColor(0.62, 0.82, 1)
       c.time = fs(c, F_SEMI, fsz); c.time:SetPoint("LEFT", c.pct, "RIGHT", 3, 0); c.time:SetTextColor(0.55, 0.58, 0.64)
       store[i] = c
@@ -1317,7 +1316,6 @@ do
   toast:SetSize(260, 48); toast:SetPoint("TOP", UIParent, "TOP", 0, -150); toast:SetFrameStrata("HIGH"); toast:Hide()
   skin(toast, "Panel", 520, 1024)
   local icon = toast:CreateTexture(nil, "ARTWORK"); icon:SetSize(26, 26); icon:SetPoint("LEFT", 12, 0)
-  icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
   local title = fs(toast, F_BOLD, 13); title:SetPoint("TOPLEFT", 48, -9); title:SetTextColor(1, 0.82, 0.29)
   local sub = fs(toast, F_SEMI, 11); sub:SetPoint("TOPLEFT", 48, -27); sub:SetTextColor(0.75, 0.78, 0.84)
   local t = 0
