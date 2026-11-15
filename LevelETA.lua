@@ -791,7 +791,14 @@ local function spellTex(id)
 end
 local UNKNOWN_ICON = 134400  -- spillets eget spoergsmaalstegn, kun hvis intet andet kendes
 local function foodTex() return buffs.fedIcon or buffs.lastFedIcon or UNKNOWN_ICON end
-local function bagTex() return buffs.bagIcon or buffs.lastBagIcon or buffs.castIcon or spellTex(BAG_ID) or UNKNOWN_ICON end
+-- Well-Rested-buffens ikon (inv_drink_15) og selve Cozy Sleeping Bag (item 211527, inv_misc_bag_bigbagofenchantments), tjekket paa Wowhead
+local WELLRESTED_ICON = "Interface\\Icons\\INV_Drink_15"
+local COZYBAG_ICON = "Interface\\Icons\\INV_Misc_Bag_BigBagOfEnchantments"
+local function bagTex() return buffs.bagIcon or buffs.lastBagIcon or spellTex(BAG_ID) or WELLRESTED_ICON end
+local function cozyTex()
+  local ok, t = pcall(function() return (C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(211527)) or (GetItemIcon and GetItemIcon(211527)) end)
+  return buffs.castIcon or (ok and t) or COZYBAG_ICON
+end
 local function campTex() return buffs.campIcon or buffs.lastCampIcon or buffs.campBenIcon or UNKNOWN_ICON end
 
 -- hvor laenge foer en buff loeber ud der advares (indstillinger: sekunder for food, minutter for soveposen)
@@ -1178,10 +1185,10 @@ local function calc()
   local list = {}
   local nxt, st = nextStackAt()
   if nxt then
-    list[#list + 1] = {icon = bagTex(), title = T("sleepBag"), pips = st, s0 = nxt - 60, s1 = nxt,
+    list[#list + 1] = {icon = cozyTex(), title = T("sleepBag"), pips = st, s0 = nxt - 60, s1 = nxt,
       text = function(left) return string.format(T("nextStack"), st + 1, math.ceil(left)) end}
   elseif buffs.bagFullAt and now - buffs.bagFullAt < 4 then
-    list[#list + 1] = {icon = bagTex(), title = T("sleepBag"), pips = 3, done = T("fullRested")}
+    list[#list + 1] = {icon = cozyTex(), title = T("sleepBag"), pips = 3, done = T("fullRested")}
   end
   if buffs.campEnd and buffs.campEnd > now then
     local d = buffs.campDur or 60
