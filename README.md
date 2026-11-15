@@ -2,6 +2,8 @@
 
 **LevelETA tells you when you will reach your next levels.**
 
+Part of the ETA family with [GoldETA](https://github.com/Nielsen2211/GoldETA). Each works on its own, and together they share one window.
+
 - **When you hit your next tenth level and level 60**, as real dates like *Friday 18:30*
 - **What level you will be when you stop playing today**
 - **An XP bar and XP tracker**: XP per hour, time on this level, time to next level, quest XP, rested XP and XP buffs
@@ -45,7 +47,7 @@ When you have an XP buff, it is also shown in the window under the three rows.
 
 ## Works with GoldETA
 
-If **GoldETA** is installed, your mount goal is shown in LevelETA's window, right under the level rows: your gold, gold per hour, when the gold is ready, and whether you have it before level 40.
+If [**GoldETA**](https://github.com/Nielsen2211/GoldETA) is installed, your mount goal is shown in LevelETA's window, right under the level rows: your gold, gold per hour, when the gold is ready, and whether you have it before level 40.
 
 LevelETA also keeps a small gold history in the background: income and spending from the last 3 hours of play (spending at a vendor or flight master is marked as such), your total income over all play time, and your gold at each level up. It is not shown in LevelETA. It is there so GoldETA has your gold per hour from the first minute, even if you install it later.
 
