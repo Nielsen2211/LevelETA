@@ -45,6 +45,12 @@ When you lie in the Cozy Sleeping Bag or sit by a campfire, a small bar slides o
 
 When you have an XP buff, it is also shown in the window under the three rows.
 
+## Race against your main
+
+LevelETA remembers the level times of all your characters. On an alt, a row in the window compares it with your highest character at the exact same point, like **vs Thrall: 1h 10m ahead** (green) or **25m behind** (orange). If some early levels are missing, it compares from the first level both characters have times for, like **vs Thrall, 20+**. At level 60 it tells you how much faster or slower you were in total.
+
+You can turn it off in the settings.
+
 ## At level 60
 
 When you hit 60 there is nothing left to level, so LevelETA changes with you:

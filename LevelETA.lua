@@ -55,7 +55,8 @@ local LOC = {
     impossible = "Not reachable at your pace", goalDone = "Goal reached!", clickGoal = "Click: set goal",
     goalBtn = "Goal", dh = "%dd %dh",
     tabWindow = "Window", tabBar = "XP bar", tabTime = "Play time", winSec = "Window", rowsSec = "Show in the window",
-    showToday = "Level when I stop today", showNext = "Next tenth level", show60 = "Level 60", showBuffsWin = "XP buffs",
+    showToday = "Level when I stop today", showNext = "Next tenth level", show60 = "Level 60", showBuffsWin = "XP buffs", showRace = "Race against your main",
+    vsFmt = "vs %s", vsFrom = "vs %s, %d+", ahead = "%s ahead", behind = "%s behind", faster = "%s faster", slower = "%s slower", even = "Neck and neck",
     showMinimap = "Minimap button", onBar = "On the bar", showStats = "Numbers under the bar",
     showBuffsBar = "XP buffs on the bar", setGoal = "Set goal",
     xphShort = "XP/h", spent = "This level", left = "Next", questsShort = "Quests",
@@ -102,7 +103,8 @@ local LOC = {
     impossible = "Kan ikke nås med dit tempo", goalDone = "Mål nået!", clickGoal = "Klik: sæt mål",
     goalBtn = "Mål", dh = "%dd %dt",
     tabWindow = "Vindue", tabBar = "XP-bar", tabTime = "Spilletid", winSec = "Vinduet", rowsSec = "Vis i vinduet",
-    showToday = "Level når jeg stopper i dag", showNext = "Næste tiende level", show60 = "Level 60", showBuffsWin = "XP-buffs",
+    showToday = "Level når jeg stopper i dag", showNext = "Næste tiende level", show60 = "Level 60", showBuffsWin = "XP-buffs", showRace = "Kapløb mod din main",
+    vsFmt = "mod %s", vsFrom = "mod %s, %d+", ahead = "%s foran", behind = "%s bagud", faster = "%s hurtigere", slower = "%s langsommere", even = "Helt lige",
     showMinimap = "Minimap-knap", onBar = "På baren", showStats = "Tal under baren",
     showBuffsBar = "XP-buffs på baren", setGoal = "Sæt mål",
     xphShort = "XP/t", spent = "Brugt", left = "Tilbage", questsShort = "Quests",
@@ -1433,6 +1435,59 @@ do
   end
 end
 
+-- ---------- kapløb mod din main: dine level-tider deles mellem dine karakterer (LevelETAAccountDB) ----------
+do
+  local function myKey() return (UnitName("player") or "") .. "-" .. ((GetRealmName and GetRealmName()) or "") end
+  local function chars()
+    LevelETAAccountDB = LevelETAAccountDB or {}
+    LevelETAAccountDB.chars = LevelETAAccountDB.chars or {}
+    return LevelETAAccountDB.chars
+  end
+  -- gem denne karakters tid pr. level, saa dine andre karakterer kan sammenligne med den
+  INFO.saveChar = function()
+    if not DB then return end
+    local d = {}
+    for _, x in ipairs(mergedHistory(fxbRecord())) do d[x.L] = math.floor(x.d) end
+    local class = UnitClass and select(2, UnitClass("player")) or nil
+    chars()[myKey()] = {name = UnitName("player"), class = class, lvl = UnitLevel("player"), d = d}
+  end
+  -- sammenlign med din hoejeste karakter over de levels I begge har tider for.
+  -- lvl < 60: hvor du er nu (el sekunder inde i levelet, frac af levelets XP). lvl = 60: hele vejen til 60.
+  INFO.race = function(lvl, el, frac)
+    if DB.showRace == false then return nil end
+    local my, me = {}, myKey()
+    for _, x in ipairs(mergedHistory(fxbRecord())) do my[x.L] = x.d end
+    local best
+    for key, c in pairs(chars()) do
+      local ok = key ~= me and type(c) == "table" and type(c.d) == "table"
+      if ok then
+        if lvl < MAXLVL then ok = (c.lvl or 0) > lvl and c.d[lvl] ~= nil else ok = (c.lvl or 0) >= MAXLVL end
+      end
+      if ok then
+        local L, a, b = lvl - 1, 0, 0
+        while L >= 1 and my[L] and c.d[L] do a, b, L = a + my[L], b + c.d[L], L - 1 end
+        local from, span = L + 1, lvl - 1 - L
+        if span >= 1 or lvl < MAXLVL then
+          local mine, theirs = a + (el or 0), b + (frac or 0) * (c.d[lvl] or 0)
+          local cand = {c = c, diff = mine - theirs, from = from, span = span}
+          if not best or (c.lvl or 0) > (best.c.lvl or 0) or ((c.lvl or 0) == (best.c.lvl or 0) and span > best.span) then best = cand end
+        end
+      end
+    end
+    if not best then return nil end
+    local c = best.c
+    local nm = c.name or "?"
+    local col = c.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[c.class]
+    if col and col.colorStr then nm = "|c" .. col.colorStr .. nm .. "|r" end
+    local title = best.from > 1 and string.format(T("vsFrom"), nm, best.from) or string.format(T("vsFmt"), nm)
+    local d, v = best.diff, nil
+    if math.abs(d) < 60 then v = "|cffe8eaf0" .. T("even") .. "|r"
+    elseif d < 0 then v = "|cff5cd97f" .. string.format(T(lvl < MAXLVL and "ahead" or "faster"), dur(-d)) .. "|r"
+    else v = "|cffff9a4a" .. string.format(T(lvl < MAXLVL and "behind" or "slower"), dur(d)) .. "|r" end
+    return title, v
+  end
+end
+
 -- de tre faste raekker
 local function mainRows(y)
   local lvl = UnitLevel("player")
@@ -1458,6 +1513,8 @@ local function mainRows(y)
     if slow then  -- hurtigste level er altid et af de foerste, saa kun det langsomste vises
       list[#list + 1] = {T("slowest"), string.format("|cff5c6270%s %d|r  |cffe8eaf0%s|r", T("level"), slow.L, dur(slow.d))}
     end
+    local rt, rv = INFO.race(MAXLVL, 0, 0)
+    if rt then list[#list + 1] = {rt, rv} end
     while #rows < #list do rows[#rows + 1] = newRow() end
     for i, it in ipairs(list) do y = setRow(rows[i], y, it[1], it[2], nil, i == #list) end
     return y
@@ -1493,6 +1550,10 @@ local function mainRows(y)
     list[#list + 1] = {T("level") .. " 60", "|cffffd24a" .. nice(eta(timeTo(MAXLVL, rL, head), rL), 30) .. "|r"}
   end
 
+  local mx = UnitXPMax("player")
+  local rt, rv = INFO.race(lvl, levelElapsed(fxbRecord()), (mx and mx > 0) and UnitXP("player") / mx or 0)
+  if rt then list[#list + 1] = {rt, rv} end
+  while #rows < #list do rows[#rows + 1] = newRow() end
   for i, it in ipairs(list) do y = setRow(rows[i], y, it[1], it[2], it[3], i == #list) end
   return y, r, head, rL
 end
@@ -1778,9 +1839,10 @@ toggle(-114, "showToday", function() return DB.showToday end, function(v) DB.sho
 toggle(-142, "showNext", function() return DB.showNext end, function(v) DB.showNext = v end)
 toggle(-170, "show60", function() return DB.show60 end, function(v) DB.show60 = v end)
 toggle(-198, "showBuffsWin", function() return DB.showBuffsWin end, function(v) DB.showBuffsWin = v end)
-section(-236, "timesHead")
-toggle(-258, "showTimes", function() return DB.showTimes end, function(v) DB.showTimes = v end)
-slider(-290, "timesCount", 3, 30, 1, function() return DB.timesCount end, function(v) DB.timesCount = v end,
+toggle(-226, "showRace", function() return DB.showRace ~= false end, function(v) DB.showRace = v end)
+section(-264, "timesHead")
+toggle(-286, "showTimes", function() return DB.showTimes end, function(v) DB.showTimes = v end)
+slider(-318, "timesCount", 3, 30, 1, function() return DB.timesCount end, function(v) DB.timesCount = v end,
   function(v) return tostring(v) end)
 
 -- fane 2: XP-bar
@@ -1972,6 +2034,7 @@ pcall(f.RegisterEvent, f, "UPDATE_FACTION")
 for _, ev in ipairs({"MERCHANT_SHOW", "MERCHANT_CLOSED", "TAXIMAP_OPENED", "TAXIMAP_CLOSED"}) do pcall(f.RegisterEvent, f, ev) end
 if f.RegisterUnitEvent then f:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player") else f:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED") end
 f:RegisterEvent("TIME_PLAYED_MSG")
+f:RegisterEvent("PLAYER_LOGOUT")
 if f.RegisterUnitEvent then f:RegisterUnitEvent("UNIT_AURA", "player") else f:RegisterEvent("UNIT_AURA") end
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
 f:RegisterEvent("PLAYER_DEAD")
@@ -2027,6 +2090,7 @@ f:SetScript("OnEvent", function(self, event, a1, a2, ...)
     goldTrack("world")
     if a1 or not DB.sess then DB.sess = {start = time(), xp = 0, kills = 0, quests = 0, levels = 0} end  -- ny login
     INFO.repTrack()
+    if C_Timer and C_Timer.After then C_Timer.After(5, INFO.saveChar) else INFO.saveChar() end
     applyBlizz()
     lastXP, lastMax, lastLevel, lastEx = UnitXP("player"), UnitXPMax("player"), UnitLevel("player"), restedXP()
     questDirty = true
@@ -2044,6 +2108,7 @@ f:SetScript("OnEvent", function(self, event, a1, a2, ...)
     goldTrack("level", a1)
     if type(a1) == "number" and DB.times[a1] == nil then DB.times[a1] = DB.play end  -- dinget gemmes altid, ogsaa hvis XP-beskeden kommer skaevt
     if a1 == MAXLVL and not DB.ding60 then DB.ding60 = time() end
+    if C_Timer and C_Timer.After then C_Timer.After(3, INFO.saveChar) end
     questDirty = true  -- quests giver mindre XP, naar du er et level hoejere: regn dem igen
     if C_Timer and C_Timer.After then
       C_Timer.After(2, requestPlayed)
@@ -2056,6 +2121,8 @@ f:SetScript("OnEvent", function(self, event, a1, a2, ...)
       buffsDirty = true
       if not (InCombatLockdown and InCombatLockdown()) then updateSoon(true) end
     end
+  elseif event == "PLAYER_LOGOUT" then
+    pcall(INFO.saveChar)
   elseif event == "UPDATE_FACTION" then
     INFO.repTrack()
     if UnitLevel("player") >= MAXLVL then updateSoon() end
