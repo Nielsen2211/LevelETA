@@ -1371,6 +1371,33 @@ local function mainRows(y)
   return y, r, head, rL
 end
 
+-- ---------- sektioner fra andre addons (fx GoldETA), mellem ETA-raekkerne og level-tiderne ----------
+local sections = {}
+local function drawSections(y)
+  for _, sec in ipairs(sections) do
+    if not sec.frame then
+      sec.frame = CreateFrame("Frame", nil, f)
+      sec.frame:SetHeight(1)
+      sec.frame:SetPoint("TOPLEFT", 14, y); sec.frame:SetPoint("TOPRIGHT", -14, y)
+      pcall(sec.build, sec.frame, W - 28)
+    end
+    local ok, h = pcall(sec.height)
+    h = (ok and type(h) == "number") and h or 0
+    if h > 0 then
+      if sec._y ~= y or sec._h ~= h then
+        sec._y, sec._h = y, h
+        sec.frame:ClearAllPoints(); sec.frame:SetPoint("TOPLEFT", 14, y); sec.frame:SetPoint("TOPRIGHT", -14, y)
+        sec.frame:SetHeight(h)
+      end
+      sec.frame:Show()
+      y = y - h
+    else
+      sec.frame:Hide()
+    end
+  end
+  return y
+end
+
 local function refresh()
   if not DB then return end
   local t0 = debugprofilestop and debugprofilestop()
@@ -1391,6 +1418,7 @@ local function refresh()
     else
       placeChips(f, winChips, list, 0, 0)
     end
+    y = drawSections(y)
     if DB.showTimes then y = drawTimes(y) else hideTimes() end
     if f._h ~= y then f._h = y; f:SetHeight(-y + 10) end
     f:SetShown(y < -44)  -- intet at vise: skjul vinduet helt
@@ -1409,6 +1437,40 @@ local function refresh()
     INFO.pN, INFO.pSum = (INFO.pN or 0) + 1, (INFO.pSum or 0) + ms
     if ms > (INFO.pMax or 0) then INFO.pMax = ms end
   end
+end
+
+-- ---------- API til andre addons (fx GoldETA) ----------
+do
+  local pending = false
+  LevelETA_API = {
+    version = 1,
+    -- klokkeslaet (unix-tid) hvor du naar et level, med dine spilletider. nil hvis du allerede er der
+    GetLevelETA = function(level)
+      if not DB or type(level) ~= "number" or UnitLevel("player") >= level then return nil end
+      local rL = longRate()
+      local head = headStart(rL)
+      local p = timeTo(level, rL, head)
+      return eta(p, rL), p
+    end,
+    -- klokkeslaet efter playSec sekunders spil, med dine spilletider og pauser
+    PlayETA = function(playSec)
+      if not DB or type(playSec) ~= "number" then return nil end
+      return eta(playSec, nil)
+    end,
+    -- en anden addon kan vise en sektion i vinduet: build(frame, width) kaldes een gang, height() ved hver opdatering
+    RegisterSection = function(id, build, height)
+      for _, sec in ipairs(sections) do if sec.id == id then return end end
+      sections[#sections + 1] = {id = id, build = build, height = height}
+      if DB then LevelETA_API.Refresh() end
+    end,
+    -- tegn vinduet igen lidt efter (samles, saa mange kald giver een opdatering)
+    Refresh = function()
+      if pending then return end
+      pending = true
+      local function run() pending = false; refresh() end
+      if C_Timer and C_Timer.After then C_Timer.After(0, run) else run() end
+    end,
+  }
 end
 
 -- indstillinger og maal-vindue i egen blok (Lua tillader kun 200 lokale variabler i filen)
