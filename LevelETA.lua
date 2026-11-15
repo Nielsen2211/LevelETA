@@ -299,14 +299,34 @@ local function fxbRecord()  -- ForeverXP Bar gemmer spilletid ved hvert level
   return rec
 end
 
-local function durations(times)  -- {L = sekunder paa level L}
-  local d = {}
-  if type(times) ~= "table" then return d end
+local function durations(times)  -- {L = sekunder paa level L}, {L = true naar tiden er fordelt ud fra XP}
+  local d, approx = {}, {}
+  if type(times) ~= "table" then return d, approx end
   for L = 1, MAXLVL - 1 do
     local a, b = times[L], times[L + 1]
     if type(a) == "number" and type(b) == "number" and b > a then d[L] = b - a end
   end
-  return d
+  -- mangler starten paa et level (fx et ding der ikke blev set), kendes tiden for to levels tilsammen:
+  -- den deles efter hvor meget XP hvert level kraever, saa intet level springes over
+  for L = 1, MAXLVL - 2 do
+    local a = times[L]
+    if type(a) == "number" and not d[L] and times[L + 1] == nil then
+      for k = L + 2, math.min(L + 4, MAXLVL) do
+        local b = times[k]
+        if type(b) == "number" then
+          if b > a then
+            local tot = 0
+            for j = L, k - 1 do tot = tot + (XPT[j] or 0) end
+            if tot > 0 then
+              for j = L, k - 1 do d[j], approx[j] = (b - a) * (XPT[j] or 0) / tot, true end
+            end
+          end
+          break
+        end
+      end
+    end
+  end
+  return d, approx
 end
 
 -- Tre kilder pr. level, i prioriteret raekkefoelge:
@@ -321,19 +341,25 @@ local function mergedHistory(rec)
     end
   end
   if INFO.mh then return INFO.mh end  -- samme refresh: genbrug
-  local src = {durations(DB.ptimes), durations(DB.fxbTimes), durations(DB.times)}
+  local src, ap = {}, {}
+  src[1], ap[1] = durations(DB.ptimes)
+  src[2], ap[2] = durations(DB.fxbTimes)
+  src[3], ap[3] = durations(DB.times)
   local used = {false, false, false}
   local h = {}
   for L = 1, MAXLVL - 1 do
-    local best, bi
-    for i = 1, 3 do
-      local v = src[i][L]
-      if v then
-        if not best then best, bi = v, i
-        elseif math.abs(best - v) / math.max(best, v) < 0.25 then best = (best + v) / 2; used[i] = true end
+    local best, bi, rough
+    for pass = 1, 2 do  -- foerst maalte tider; kun hvis ingen findes, en fordelt tid
+      for i = 1, 3 do
+        local v = src[i][L]
+        if v and ((pass == 1) ~= (ap[i][L] == true)) then
+          if not best then best, bi = v, i
+          elseif math.abs(best - v) / math.max(best, v) < 0.25 then best = (best + v) / 2; used[i] = true end
+        end
       end
+      if best then rough = pass == 2; break end
     end
-    if best then h[#h + 1] = {L = L, d = best}; used[bi] = true end
+    if best then h[#h + 1] = {L = L, d = best, approx = rough or nil}; used[bi] = true end
   end
   local names = {}
   if used[1] or used[3] then names[#names + 1] = NAME end
@@ -687,12 +713,18 @@ drawTimes = function(y)
     local el = levelElapsed(rec)
     if el and el > 0 then list[1] = {L = lvl, d = el, now = true} end
   end
+  -- gaa level for level nedad, saa et level uden tid vises som "?" i stedet for at blive sprunget over
   local sum, n = 0, 0
-  for i = #hist, 1, -1 do
-    local x = hist[i]
-    if x.L < lvl then
-      list[#list + 1] = x; sum = sum + x.d; n = n + 1
-      if n >= DB.timesCount then break end
+  local byL, minL = {}, nil
+  for _, x in ipairs(hist) do byL[x.L] = x; if not minL or x.L < minL then minL = x.L end end
+  if minL then
+    local shown = 0
+    for L = lvl - 1, minL, -1 do
+      local x = byL[L]
+      if x then list[#list + 1] = x; sum = sum + x.d; n = n + 1
+      else list[#list + 1] = {L = L, missing = true} end
+      shown = shown + 1
+      if shown >= DB.timesCount then break end
     end
   end
 
@@ -704,9 +736,13 @@ drawTimes = function(y)
   if #list == 0 then tAvgLine:Hide(); return done(placeTime(1, y, T("noTimes"))) end
 
   local mx = 0
-  for _, x in ipairs(list) do mx = math.max(mx, x.d) end
+  for _, x in ipairs(list) do if x.d then mx = math.max(mx, x.d) end end
   for i, x in ipairs(list) do
-    y = placeTime(i, y, T("level") .. " " .. x.L, dur(x.d), x.d / mx, x.now)
+    if x.missing then
+      y = placeTime(i, y, T("level") .. " " .. x.L, "|cff8c94a3?|r")
+    else
+      y = placeTime(i, y, T("level") .. " " .. x.L, (x.approx and "~" or "") .. dur(x.d), x.d / mx, x.now)
+    end
   end
   if n >= 2 then
     tAvgLine:Hide()  -- ingen streg: lidt luft er nok
@@ -1466,6 +1502,24 @@ end
 -- ---------- events ----------
 local lastXP, lastMax, lastLevel, lastEx
 local acc = 0
+-- buffs og rested vises med det samme: samles op og opdateres en gang lidt efter (flere beskeder paa en gang = en opdatering)
+local soonPending = false
+local function buffKey() return tostring(buffs.fedUntil) .. tostring(buffs.bagUntil) .. tostring(buffs.bagStacks) end
+local function updateSoon(checkBuffs)
+  if soonPending then return end
+  soonPending = true
+  local function run()
+    soonPending = false
+    if not DB then return end
+    if checkBuffs then
+      local before = buffKey()
+      scanBuffs()
+      if buffKey() == before then return end  -- intet nyt: intet at tegne
+    end
+    refresh()
+  end
+  if C_Timer and C_Timer.After then C_Timer.After(0.2, run) else run() end
+end
 
 f:RegisterEvent("ADDON_LOADED")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -1473,6 +1527,7 @@ f:RegisterEvent("PLAYER_XP_UPDATE")
 f:RegisterEvent("PLAYER_LEVEL_UP")
 f:RegisterEvent("QUEST_LOG_UPDATE")
 f:RegisterEvent("UPDATE_EXHAUSTION")
+f:RegisterEvent("PLAYER_UPDATE_RESTING")
 f:RegisterEvent("TIME_PLAYED_MSG")
 if f.RegisterUnitEvent then f:RegisterUnitEvent("UNIT_AURA", "player") else f:RegisterEvent("UNIT_AURA") end
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -1535,6 +1590,7 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
       DB.ptimes[UnitLevel("player")] = total - atLevel  -- praecis start paa dette level
     end
   elseif event == "PLAYER_LEVEL_UP" then
+    if type(a1) == "number" and DB.times[a1] == nil then DB.times[a1] = DB.play end  -- dinget gemmes altid, ogsaa hvis XP-beskeden kommer skaevt
     questDirty = true  -- quests giver mindre XP, naar du er et level hoejere: regn dem igen
     if C_Timer and C_Timer.After then
       C_Timer.After(2, requestPlayed)
@@ -1543,9 +1599,13 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
   elseif event == "QUEST_LOG_UPDATE" then
     questDirty = true
   elseif event == "UNIT_AURA" then
-    if a1 == "player" then buffsDirty = true end
+    if a1 == "player" then
+      buffsDirty = true
+      if not (InCombatLockdown and InCombatLockdown()) then updateSoon(true) end
+    end
   elseif event == "PLAYER_REGEN_ENABLED" then
     buffsDirty = true
+    updateSoon(true)  -- buffs taget i kamp vises, saa snart kampen er slut
   elseif event == "PLAYER_DEAD" then
     buffs.fedUntil = nil  -- food buff forsvinder ved doed, soveposen bliver
     buffsDirty = true
@@ -1561,14 +1621,17 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
     if n and n > 0 then DB.lastKill = n; sess().kills = sess().kills + 1 end
   elseif event == "UPDATE_EXHAUSTION" then
     local ex = restedXP()
-    if lastEx and ex > lastEx then lastEx = ex end  -- rested steg (inn), ikke bonus
+    if lastEx and ex > lastEx then lastEx = ex end  -- rested steg (inn, telt), ikke bonus
+    updateSoon(false)  -- vis ny rested med det samme
+  elseif event == "PLAYER_UPDATE_RESTING" then
+    updateSoon(false)
   elseif event == "PLAYER_XP_UPDATE" then
     local xp, mx, lvl = UnitXP("player"), UnitXPMax("player"), UnitLevel("player")
     local gain
     local leveled = lastLevel and lvl > lastLevel
     if leveled then
       gain = (lastMax - lastXP) + xp
-      DB.times[lvl] = DB.play
+      if not (DB.times[lvl] and DB.play - DB.times[lvl] < 60) then DB.times[lvl] = DB.play end  -- PLAYER_LEVEL_UP kan have gemt det lige foer
       sess().levels = sess().levels + 1
       playedLevelTime, playedAt = 0, time()
     else
