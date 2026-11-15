@@ -47,7 +47,7 @@ When you have an XP buff, it is also shown in the window under the three rows.
 
 ### Gold on the XP bar (optional)
 
-With GoldETA installed you can show your **gold per hour** and **how much gold you still need for your goal** in the top line of the XP bar, like *12g 40s/h · 37g to Mount*. Both are off by default; turn them on in the XP bar tab. If your buff icons take up the room, the goal is kept and the gold per hour is left out.
+With GoldETA installed you can show your **gold per hour** and **how much gold you still need for your goal** in the top line of the XP bar, like *12g 40s/h · 37g to Mount*. Both are off by default; turn them on in the XP bar tab. The bar gets a little wider (not taller) when one of them is on, so everything fits next to your buffs.
 
 ## Race against your main
 

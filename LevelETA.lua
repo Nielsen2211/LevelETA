@@ -1030,10 +1030,12 @@ local segBg = barTex("BACKGROUND", 0, 1, 1, 1, 0.06); segBg:SetPoint("LEFT"); se
 local segCur = barTex("ARTWORK", 3, 0.62, 0.82, 1, 0.92)
 local segQuest = barTex("ARTWORK", 2, 1, 0.82, 0.29, 0.8)
 local segRest = barTex("ARTWORK", 1, 0.62, 0.82, 1, 0.43)
+INFO.ticks = {}
 for i = 1, 9 do
   local t = track:CreateTexture(nil, "OVERLAY")
   t:SetColorTexture(0, 0, 0, 0.18); t:SetSize(1, 8)
   t:SetPoint("CENTER", track, "LEFT", TRW * i / 10, 0)
+  INFO.ticks[i] = t
 end
 local function setSeg(t, from, to)
   from, to = math.max(0, math.min(1, from)), math.max(0, math.min(1, to))
@@ -1053,6 +1055,15 @@ for i = 1, 5 do
   stats[i] = c
 end
 local lastStats
+-- baren bliver bredere (ikke hoejere), naar der ogsaa vises guld fra GoldETA
+INFO.barWidth = function(w)
+  if bar._w == w then return end
+  bar._w = w
+  bar:SetWidth(w)
+  TRW = w - 24
+  for i, t in ipairs(INFO.ticks) do t:ClearAllPoints(); t:SetPoint("CENTER", track, "LEFT", TRW * i / 10, 0) end
+  bar._c1, lastStats = nil, nil  -- tegn bjaelken og tallene igen med den nye bredde
+end
 local function layoutStats(items)
   local parts = {}
   for i, it in ipairs(items) do parts[i] = it[1] .. "=" .. it[2] end
@@ -1196,6 +1207,7 @@ updateBar = function(r, head)
     bar:Show()
     barH = DB.showStats and 60 or 44
     if bar._h ~= barH then bar._h = barH; bar:SetHeight(barH) end
+    INFO.barWidth(((DB.goldBar or DB.goalBar) and type(GoldETA_API) == "table") and 560 or BW)
     updateRep()
     INFO.goldOnBar()
     return
@@ -1204,6 +1216,7 @@ updateBar = function(r, head)
   bar:Show()
   barH = DB.showStats and 60 or 44
   if bar._h ~= barH then bar._h = barH; bar:SetHeight(barH) end
+  INFO.barWidth(((DB.goldBar or DB.goalBar) and type(GoldETA_API) == "table") and 560 or BW)
   local lvl, xp, mx = UnitLevel("player"), UnitXP("player"), UnitXPMax("player")
   if not mx or mx <= 0 then return end
   bLevel:SetText(T("level") .. " " .. lvl)
