@@ -62,7 +62,7 @@ local LOC = {
     xphShort = "XP/h", spent = "This level", left = "Next", questsShort = "Quests",
     repHr = "Rep/h", repSess = "Session", repHead = "Reputation", repNone = "Watch a faction to see it here",
     repHint = "Open your reputation window and tick Show as Experience Bar on a faction.",
-    repLeft = "Rep to next standing", repAt = "%s", repBar = "Reputation bar at level 60",
+    repLeft = "Rep to next standing", repAt = "%s", repBar = "Reputation bar at level 60", goldBar = "Gold per hour (GoldETA)", goalBar = "Gold left to goal (GoldETA)",
     recap60 = "Level 60", showRecap = "Level 60 recap", maxHead = "At level 60", played60 = "Played to 60", slowest = "Slowest level", dh = "%dd %dh", reached = "Reached",
     buffWarn = "Warn when XP buffs run out", leftFmt = "%s left",
     warnSec = "Buff warnings", foodWarn = "Food buff, warn before", bagWarn = "Sleeping bag, warn before", secShort = "sec",
@@ -110,7 +110,7 @@ local LOC = {
     xphShort = "XP/t", spent = "Brugt", left = "Tilbage", questsShort = "Quests",
     repHr = "Rep/t", repSess = "Session", repHead = "Omdømme", repNone = "Følg en faction for at se den her",
     repHint = "Åbn dit omdømme-vindue og sæt flueben i Show as Experience Bar ved en faction.",
-    repLeft = "Rep til næste niveau", repAt = "%s", repBar = "Omdømme-bar på level 60",
+    repLeft = "Rep til næste niveau", repAt = "%s", repBar = "Omdømme-bar på level 60", goldBar = "Guld i timen (GoldETA)", goalBar = "Guld til målet (GoldETA)",
     recap60 = "Level 60", showRecap = "Level 60 recap", maxHead = "På level 60", played60 = "Spilletid til 60", slowest = "Langsomste level", dh = "%dd %dt", reached = "Nået",
     buffWarn = "Advar når XP-buffs løber ud", leftFmt = "%s tilbage",
     warnSec = "Buff-advarsler", foodWarn = "Food buff, advar før", bagWarn = "Sovepose, advar før", secShort = "sek",
@@ -979,6 +979,34 @@ do
 local bLevel = fs(bar, F_BOLD, 12.5); bLevel:SetPoint("LEFT", bar, "TOPLEFT", 12, -14)
 local bPct = fs(bar, F_BOLD, 12.5); bPct:SetPoint("RIGHT", bar, "TOPRIGHT", -12, -14); bPct:SetTextColor(0.62, 0.82, 1)
 local bXP = fs(bar, F_SEMI, 10); bXP:SetPoint("RIGHT", bPct, "LEFT", -8, 0); bXP:SetTextColor(0.36, 0.38, 0.44)
+-- guld i timen fra GoldETA (kun naar GoldETA er installeret og det er slaaet til), lige foer XP-tallene
+INFO.bGold = fs(bar, F_BOLD, 11); INFO.bGold:SetPoint("RIGHT", bXP, "LEFT", -19, 0); INFO.bGold:SetTextColor(1, 0.82, 0.29); INFO.bGold:Hide()
+INFO.bGoldSep = bar:CreateTexture(nil, "ARTWORK"); INFO.bGoldSep:SetSize(1, 12); INFO.bGoldSep:SetPoint("LEFT", INFO.bGold, "RIGHT", 9, 0)
+INFO.bGoldSep:SetColorTexture(1, 1, 1, 0.12); INFO.bGoldSep:Hide()
+INFO.goldOnBar = function()
+  local api = type(GoldETA_API) == "table" and GoldETA_API or nil
+  local function get(fn)
+    if not (api and type(api[fn]) == "function") then return nil end
+    local ok, t = pcall(api[fn])
+    if ok and type(t) == "string" and t ~= "" then return t end
+  end
+  local rate = DB.goldBar and get("GoldPerHourText") or nil
+  local goal = DB.goalBar and get("GoalLeftText") or nil
+  -- proev begge, saa kun maalet, saa kun tempoet, hvis buff-ikonerne fylder for meget
+  local tries = {}
+  if rate and goal then tries[#tries + 1] = rate .. "  |cff5c6270·|r  " .. goal end
+  if goal then tries[#tries + 1] = goal end
+  if rate then tries[#tries + 1] = rate end
+  local last
+  for _, c in ipairs(barChips) do if c:IsShown() then last = c end end
+  local cr = last and last.GetRight and last:GetRight()
+  for _, txt in ipairs(tries) do
+    INFO.bGold:SetText(txt); INFO.bGold:Show()
+    local gl = INFO.bGold.GetLeft and INFO.bGold:GetLeft()
+    if not (gl and cr and cr > gl - 8) then INFO.bGoldSep:Show(); return end
+  end
+  INFO.bGold:Hide(); INFO.bGoldSep:Hide()
+end
 -- bjaelken: baggrund, nuvaerende XP (blaa), quests klar (guld), rested (lyseblaa), afrundet med en maske
 local track = CreateFrame("Frame", nil, bar)
 track:SetPoint("TOPLEFT", 12, -24); track:SetPoint("TOPRIGHT", -12, -24); track:SetHeight(14)
@@ -1169,6 +1197,7 @@ updateBar = function(r, head)
     barH = DB.showStats and 60 or 44
     if bar._h ~= barH then bar._h = barH; bar:SetHeight(barH) end
     updateRep()
+    INFO.goldOnBar()
     return
   end
   if bar._scale ~= DB.barScale then bar._scale = DB.barScale; bar:SetScale(DB.barScale) end
@@ -1188,6 +1217,7 @@ updateBar = function(r, head)
     setSeg(segCur, 0, c1); setSeg(segQuest, c1, c2); setSeg(segRest, c2, c3)
   end
   placeChips(bar, barChips, DB.showBuffsBar and activeBuffs() or {}, 12 + (bLevel:GetStringWidth() or 55) + 12, -14, true)
+  INFO.goldOnBar()
   if not DB.showStats then hideStats(); return end
 
   local items = {{"xphShort", kfmt(liveXPh() or (r * 3600)), 0.91, 0.92, 0.94}}
@@ -1870,6 +1900,8 @@ toggle(-114, "showStats", function() return DB.showStats end, function(v) DB.sho
 toggle(-142, "showBuffsBar", function() return DB.showBuffsBar end, function(v) DB.showBuffsBar = v end)
 toggle(-170, "showRest", function() return DB.showRest end, function(v) DB.showRest = v end)
 toggle(-198, "repBar", function() return DB.repBar ~= false end, function(v) DB.repBar = v end)
+toggle(-226, "goldBar", function() return DB.goldBar == true end, function(v) DB.goldBar = v end)
+toggle(-254, "goalBar", function() return DB.goalBar == true end, function(v) DB.goalBar = v end)
 
 -- fane 3: spilletid, quests og rested
 host = pages[3]

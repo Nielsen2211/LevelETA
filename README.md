@@ -45,6 +45,10 @@ When you lie in the Cozy Sleeping Bag or sit by a campfire, a small bar slides o
 
 When you have an XP buff, it is also shown in the window under the three rows.
 
+### Gold on the XP bar (optional)
+
+With GoldETA installed you can show your **gold per hour** and **how much gold you still need for your goal** in the top line of the XP bar, like *12g 40s/h · 37g to Mount*. Both are off by default; turn them on in the XP bar tab. If your buff icons take up the room, the goal is kept and the gold per hour is left out.
+
 ## Race against your main
 
 LevelETA remembers the level times of all your characters. On an alt, a row in the window compares it with your highest character at the exact same point, like **vs Thrall: 1h 10m ahead** (green) or **25m behind** (orange). If some early levels are missing, it compares from the first level both characters have times for, like **vs Thrall, 20+**. At level 60 it tells you how much faster or slower you were in total.
