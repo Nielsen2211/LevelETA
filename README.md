@@ -45,6 +45,16 @@ When you lie in the Cozy Sleeping Bag or sit by a campfire, a small bar slides o
 
 When you have an XP buff, it is also shown in the window under the three rows.
 
+## At level 60
+
+When you hit 60 there is nothing left to level, so LevelETA changes with you:
+
+- **Level 60 recap**: when you reached 60, your total play time to 60 and your slowest level. Your level times stay below it
+- **Reputation bar**: the XP bar turns into a bar for the faction you watch (tick *Show as Experience Bar* in your reputation window), with rep per hour, time to the next standing and the rep you made this session. Hover it to see when you reach the next standing
+- With GoldETA installed, your epic mount goal sits right under the recap
+
+You can turn the reputation bar off in the settings.
+
 ## Works with GoldETA
 
 If [**GoldETA**](https://github.com/Nielsen2211/GoldETA) is installed, your mount goal is shown in LevelETA's window, right under the level rows: your gold, gold per hour, when the gold is ready, and whether you have it before level 40.

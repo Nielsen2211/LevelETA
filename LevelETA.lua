@@ -59,6 +59,10 @@ local LOC = {
     showMinimap = "Minimap button", onBar = "On the bar", showStats = "Numbers under the bar",
     showBuffsBar = "XP buffs on the bar", setGoal = "Set goal",
     xphShort = "XP/h", spent = "This level", left = "Next", questsShort = "Quests",
+    repHr = "Rep/h", repSess = "Session", repHead = "Reputation", repNone = "Watch a faction to see it here",
+    repHint = "Open your reputation window and tick Show as Experience Bar on a faction.",
+    repLeft = "Rep to next standing", repAt = "%s", repBar = "Reputation bar at level 60",
+    recap60 = "Level 60", played60 = "Played to 60", slowest = "Slowest level", dh = "%dd %dh", reached = "Reached",
     buffWarn = "Warn when XP buffs run out", leftFmt = "%s left",
     warnSec = "Buff warnings", foodWarn = "Food buff, warn before", bagWarn = "Sleeping bag, warn before", secShort = "sec",
     foodSoon = "Food buff is running out", foodGone = "Food buff ran out", foodAgain = "Eat again to keep +5% XP from kills",
@@ -102,6 +106,10 @@ local LOC = {
     showMinimap = "Minimap-knap", onBar = "På baren", showStats = "Tal under baren",
     showBuffsBar = "XP-buffs på baren", setGoal = "Sæt mål",
     xphShort = "XP/t", spent = "Brugt", left = "Tilbage", questsShort = "Quests",
+    repHr = "Rep/t", repSess = "Session", repHead = "Omdømme", repNone = "Følg en faction for at se den her",
+    repHint = "Åbn dit omdømme-vindue og sæt flueben i Show as Experience Bar ved en faction.",
+    repLeft = "Rep til næste niveau", repAt = "%s", repBar = "Omdømme-bar på level 60",
+    recap60 = "Level 60", played60 = "Spilletid til 60", slowest = "Langsomste level", dh = "%dd %dt", reached = "Nået",
     buffWarn = "Advar når XP-buffs løber ud", leftFmt = "%s tilbage",
     warnSec = "Buff-advarsler", foodWarn = "Food buff, advar før", bagWarn = "Sovepose, advar før", secShort = "sek",
     foodSoon = "Food buff løber snart ud", foodGone = "Food buff er løbet ud", foodAgain = "Spis igen for at beholde +5% XP fra kills",
@@ -1083,8 +1091,84 @@ local function restedPct(mx)
 end
 
 
+-- ---------- omdoemme: paa level 60 bliver XP-baren til en rep-bar for den faction du foelger ----------
+local function watched()
+  local ok, d = pcall(function() return C_Reputation and C_Reputation.GetWatchedFactionData and C_Reputation.GetWatchedFactionData() end)
+  if ok and type(d) == "table" and d.name then
+    return d.name, d.reaction, d.currentReactionThreshold or 0, d.nextReactionThreshold or 1, d.currentStanding or 0, d.factionID
+  end
+  if GetWatchedFactionInfo then
+    local name, st, mn, mx, v, id = GetWatchedFactionInfo()
+    if name then return name, st, mn or 0, mx or 1, v or 0, id end
+  end
+end
+INFO.watched = watched
+INFO.standing = function(st) return (type(st) == "number" and _G["FACTION_STANDING_LABEL" .. st]) or "" end
+-- rep du faar gemmes som smaa samples (et pr. minut), kun den sidste time bruges
+INFO.repTrack = function()
+  if not DB then return end
+  local name, _, _, _, v, id = watched()
+  if not name then return end
+  local key, R = id or name, DB.rep
+  if type(R) ~= "table" or R.key ~= key then DB.rep = {key = key, v = v, s = {}, since = DB.play}; return end
+  local d = v - (R.v or v)
+  R.v = v
+  if d <= 0 then return end
+  local p, sm = math.floor(DB.play), R.s
+  local last = sm[#sm]
+  if last and p - last.p < 60 then last.g = last.g + d else sm[#sm + 1] = {p = p, g = d} end
+  while sm[1] and sm[1].p < p - 7200 do table.remove(sm, 1) end
+  if DB.sess then DB.sess.rep = (DB.sess.rep or 0) + d end
+end
+INFO.repRate = function()  -- rep pr. sekund spilletid over den sidste time
+  local R = DB.rep
+  if type(R) ~= "table" or type(R.s) ~= "table" then return nil end
+  local span = math.min(3600, DB.play - (R.since or DB.play))
+  if span < 300 then return nil end
+  local sum = 0
+  for i = #R.s, 1, -1 do
+    local x = R.s[i]
+    if x.p < DB.play - 3600 then break end
+    sum = sum + x.g
+  end
+  if sum <= 0 then return nil end
+  return sum / span
+end
+
+local function updateRep()
+  if DB.repBar == false then bar:Hide(); return end
+  local name, st, mn, mx, v = watched()
+  placeChips(bar, barChips, {}, 0, 0, true)
+  if not bar._rep then bar._rep = true; segCur:SetColorTexture(0.36, 0.85, 0.5, 0.92) end  -- groen til omdoemme
+  setSeg(segQuest, 0, 0); setSeg(segRest, 0, 0)
+  if not name then
+    bLevel:SetText(T("repHead")); bPct:SetText(""); bXP:SetText(T("repNone"))
+    setSeg(segCur, 0, 0); hideStats(); return
+  end
+  local cur, need = v - mn, math.max(1, mx - mn)
+  bLevel:SetText(name)
+  bPct:SetText(math.floor(cur / need * 100) .. "%")
+  bXP:SetText(kfmt(cur) .. " / " .. kfmt(need) .. "  " .. INFO.standing(st))
+  setSeg(segCur, 0, cur / need)
+  if not DB.showStats then hideStats(); return end
+  local r = INFO.repRate()
+  local items = {{"repHr", r and kfmt(r * 3600) or "-", 0.91, 0.92, 0.94}}
+  if r then items[#items + 1] = {"left", dur((need - cur) / r), 0.62, 0.82, 1} end
+  items[#items + 1] = {"repSess", "+" .. kfmt((DB.sess and DB.sess.rep) or 0), 0.36, 0.85, 0.5, {0.36, 0.85, 0.5}}
+  layoutStats(items)
+end
+
 updateBar = function(r, head)
-  if not DB.showBar or UnitLevel("player") >= MAXLVL then bar:Hide(); return end
+  if not DB.showBar then bar:Hide(); return end
+  if UnitLevel("player") >= MAXLVL then
+    if DB.repBar == false then bar:Hide(); return end
+    if bar._scale ~= DB.barScale then bar._scale = DB.barScale; bar:SetScale(DB.barScale) end
+    bar:Show()
+    barH = DB.showStats and 60 or 44
+    if bar._h ~= barH then bar._h = barH; bar:SetHeight(barH) end
+    updateRep()
+    return
+  end
   if bar._scale ~= DB.barScale then bar._scale = DB.barScale; bar:SetScale(DB.barScale) end
   bar:Show()
   barH = DB.showStats and 60 or 44
@@ -1124,6 +1208,22 @@ end
 bar:SetScript("OnEnter", function(self)
   GameTooltip:SetOwner(self, "ANCHOR_TOP")
   GameTooltip:AddLine(NAME, 1, 0.82, 0.3)
+  if UnitLevel("player") >= MAXLVL then
+    local name, st, _, mx, v = INFO.watched()
+    if name then
+      GameTooltip:AddDoubleLine(name, INFO.standing(st), 0.85, 0.85, 0.85, 0.36, 0.85, 0.5)
+      GameTooltip:AddDoubleLine(T("repLeft"), commas(math.max(0, mx - v)), 0.85, 0.85, 0.85, 1, 1, 1)
+      local r = INFO.repRate()
+      if r and type(st) == "number" and st < 8 then
+        GameTooltip:AddDoubleLine(INFO.standing(st + 1), nice(eta((mx - v) / r, nil), 15), 0.85, 0.85, 0.85, 1, 0.82, 0)
+      end
+      GameTooltip:AddDoubleLine(T("repSess"), "+" .. commas((DB.sess and DB.sess.rep) or 0), 0.85, 0.85, 0.85, 0.36, 0.85, 0.5)
+    else
+      GameTooltip:AddLine(T("repHint"), 0.85, 0.85, 0.85, true)
+    end
+    GameTooltip:Show()
+    return
+  end
   local xp, mx = UnitXP("player"), UnitXPMax("player")
   local left = math.max(0, mx - xp)
   GameTooltip:AddDoubleLine(T("xpLeft"), commas(left), 0.85, 0.85, 0.85, 1, 1, 1)
@@ -1337,7 +1437,29 @@ end
 local function mainRows(y)
   local lvl = UnitLevel("player")
   if lvl >= MAXLVL then
-    if DB.showToday or DB.showNext or DB.show60 then return setRow(rows[1], y, T("done"), "", nil, true) end
+    if not (DB.showToday or DB.showNext or DB.show60) then return y end
+    -- level 60 recap: hvornaar du naaede det, spilletiden dertil og dit langsomste level
+    local function long(sec)
+      sec = math.floor(sec)
+      if sec < 86400 then return dur(sec) end
+      return string.format(T("dh"), math.floor(sec / 86400), math.floor(sec % 86400 / 3600))
+    end
+    local hist = mergedHistory(fxbRecord())
+    local total, n, slow = 0, 0, nil
+    for _, x in ipairs(hist) do
+      total, n = total + x.d, n + 1
+      if not x.approx and (not slow or x.d > slow.d) then slow = x end
+    end
+    local played = type(DB.ptimes[MAXLVL]) == "number" and DB.ptimes[MAXLVL] or nil
+    local list = {}
+    list[#list + 1] = {T("recap60"), DB.ding60 and ("|cffffd24a" .. nice(DB.ding60) .. "|r") or ("|cffffd24a" .. T("done") .. "|r")}
+    if played then list[#list + 1] = {T("played60"), "|cff9fd0ff" .. long(played) .. "|r"}
+    elseif n >= MAXLVL - 1 then list[#list + 1] = {T("played60"), "|cff9fd0ff" .. long(total) .. "|r"} end
+    if slow then  -- hurtigste level er altid et af de foerste, saa kun det langsomste vises
+      list[#list + 1] = {T("slowest"), string.format("|cff5c6270%s %d|r  |cffe8eaf0%s|r", T("level"), slow.L, dur(slow.d))}
+    end
+    while #rows < #list do rows[#rows + 1] = newRow() end
+    for i, it in ipairs(list) do y = setRow(rows[i], y, it[1], it[2], nil, i == #list) end
     return y
   end
 
@@ -1679,6 +1801,7 @@ section(-92, "onBar")
 toggle(-114, "showStats", function() return DB.showStats end, function(v) DB.showStats = v end)
 toggle(-142, "showBuffsBar", function() return DB.showBuffsBar end, function(v) DB.showBuffsBar = v end)
 toggle(-170, "showRest", function() return DB.showRest end, function(v) DB.showRest = v end)
+toggle(-198, "repBar", function() return DB.repBar ~= false end, function(v) DB.repBar = v end)
 
 -- fane 3: spilletid, quests og rested
 host = pages[3]
@@ -1845,6 +1968,7 @@ f:RegisterEvent("QUEST_LOG_UPDATE")
 f:RegisterEvent("UPDATE_EXHAUSTION")
 f:RegisterEvent("PLAYER_UPDATE_RESTING")
 f:RegisterEvent("PLAYER_MONEY")
+pcall(f.RegisterEvent, f, "UPDATE_FACTION")
 for _, ev in ipairs({"MERCHANT_SHOW", "MERCHANT_CLOSED", "TAXIMAP_OPENED", "TAXIMAP_CLOSED"}) do pcall(f.RegisterEvent, f, ev) end
 if f.RegisterUnitEvent then f:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player") else f:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED") end
 f:RegisterEvent("TIME_PLAYED_MSG")
@@ -1902,6 +2026,7 @@ f:SetScript("OnEvent", function(self, event, a1, a2, ...)
   elseif event == "PLAYER_ENTERING_WORLD" then
     goldTrack("world")
     if a1 or not DB.sess then DB.sess = {start = time(), xp = 0, kills = 0, quests = 0, levels = 0} end  -- ny login
+    INFO.repTrack()
     applyBlizz()
     lastXP, lastMax, lastLevel, lastEx = UnitXP("player"), UnitXPMax("player"), UnitLevel("player"), restedXP()
     questDirty = true
@@ -1918,6 +2043,7 @@ f:SetScript("OnEvent", function(self, event, a1, a2, ...)
   elseif event == "PLAYER_LEVEL_UP" then
     goldTrack("level", a1)
     if type(a1) == "number" and DB.times[a1] == nil then DB.times[a1] = DB.play end  -- dinget gemmes altid, ogsaa hvis XP-beskeden kommer skaevt
+    if a1 == MAXLVL and not DB.ding60 then DB.ding60 = time() end
     questDirty = true  -- quests giver mindre XP, naar du er et level hoejere: regn dem igen
     if C_Timer and C_Timer.After then
       C_Timer.After(2, requestPlayed)
@@ -1930,6 +2056,9 @@ f:SetScript("OnEvent", function(self, event, a1, a2, ...)
       buffsDirty = true
       if not (InCombatLockdown and InCombatLockdown()) then updateSoon(true) end
     end
+  elseif event == "UPDATE_FACTION" then
+    INFO.repTrack()
+    if UnitLevel("player") >= MAXLVL then updateSoon() end
   elseif event == "PLAYER_REGEN_ENABLED" then
     buffsDirty = true
     updateSoon(true)  -- buffs taget i kamp vises, saa snart kampen er slut
