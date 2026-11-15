@@ -62,7 +62,7 @@ local LOC = {
     xphShort = "XP/h", spent = "This level", left = "Next", questsShort = "Quests",
     repHr = "Rep/h", repSess = "Session", repHead = "Reputation", repNone = "Watch a faction to see it here",
     repHint = "Open your reputation window and tick Show as Experience Bar on a faction.",
-    repLeft = "Rep to next standing", repAt = "%s", repBar = "Reputation bar at level 60", goldBar = "Gold per hour (GoldETA)", goalBar = "Gold left to goal (GoldETA)",
+    repLeft = "Rep to next standing", repAt = "%s", repBar = "Reputation bar at level 60", goldBar = "Gold per hour (GoldETA)", goalBar = "Gold left to goal (GoldETA)", barAnim = "Animations",
     recap60 = "Level 60", showRecap = "Level 60 recap", maxHead = "At level 60", played60 = "Played to 60", slowest = "Slowest level", dh = "%dd %dh", reached = "Reached",
     buffWarn = "Warn when XP buffs run out", leftFmt = "%s left",
     warnSec = "Buff warnings", foodWarn = "Food buff, warn before", bagWarn = "Sleeping bag, warn before", secShort = "sec",
@@ -110,7 +110,7 @@ local LOC = {
     xphShort = "XP/t", spent = "Brugt", left = "Tilbage", questsShort = "Quests",
     repHr = "Rep/t", repSess = "Session", repHead = "Omdømme", repNone = "Følg en faction for at se den her",
     repHint = "Åbn dit omdømme-vindue og sæt flueben i Show as Experience Bar ved en faction.",
-    repLeft = "Rep til næste niveau", repAt = "%s", repBar = "Omdømme-bar på level 60", goldBar = "Guld i timen (GoldETA)", goalBar = "Guld til målet (GoldETA)",
+    repLeft = "Rep til næste niveau", repAt = "%s", repBar = "Omdømme-bar på level 60", goldBar = "Guld i timen (GoldETA)", goalBar = "Guld til målet (GoldETA)", barAnim = "Animationer",
     recap60 = "Level 60", showRecap = "Level 60 recap", maxHead = "På level 60", played60 = "Spilletid til 60", slowest = "Langsomste level", dh = "%dd %dt", reached = "Nået",
     buffWarn = "Advar når XP-buffs løber ud", leftFmt = "%s tilbage",
     warnSec = "Buff-advarsler", foodWarn = "Food buff, advar før", bagWarn = "Sovepose, advar før", secShort = "sek",
@@ -1071,6 +1071,85 @@ local function setSeg(t, from, to)
   t:SetPoint("LEFT", track, "LEFT", TRW * from, 0); t:SetWidth(TRW * (to - from)); t:Show()
 end
 
+-- ---------- animationer paa XP-baren ----------
+-- Alt koerer kun, naar noget sker (XP, ding, baren vises): spillets egne animationer, og en kort
+-- glidning af bjaelken paa under et halvt sekund. Intet arbejde i hvert billede resten af tiden.
+do
+  local function ag(obj)
+    local ok, g = pcall(obj.CreateAnimationGroup, obj)
+    if ok and g then return g end
+  end
+  local function alpha(g, from, to, dur, delay, order)
+    local a = g:CreateAnimation("Alpha")
+    a:SetFromAlpha(from); a:SetToAlpha(to); a:SetDuration(dur)
+    if delay then a:SetStartDelay(delay) end
+    a:SetOrder(order or 1)
+    return a
+  end
+  local function masked(t) if mask and t.AddMaskTexture then t:AddMaskTexture(mask) end; return t end
+  -- lys ved bjaelkens forkant, naar du faar XP
+  local spark = masked(track:CreateTexture(nil, "OVERLAY", nil, 6))
+  spark:SetTexture(TEX .. "Dot"); spark:SetBlendMode("ADD"); spark:SetVertexColor(0.75, 0.9, 1); spark:SetSize(30, 22); spark:SetAlpha(0)
+  local sparkAG = ag(spark)
+  if sparkAG then alpha(sparkAG, 0, 1, 0.12, nil, 1); alpha(sparkAG, 1, 0, 0.8, nil, 2) end
+  -- guldglimt over hele bjaelken og et skinnende stroeg, naar du dinger
+  local flash = masked(track:CreateTexture(nil, "OVERLAY", nil, 5))
+  flash:SetAllPoints(track); flash:SetColorTexture(1, 0.82, 0.29, 1); flash:SetAlpha(0)
+  local flashAG = ag(flash)
+  if flashAG then alpha(flashAG, 0, 0.55, 0.15, nil, 1); alpha(flashAG, 0.55, 0, 0.9, nil, 2) end
+  local shine = masked(track:CreateTexture(nil, "OVERLAY", nil, 7))
+  shine:SetTexture(TEX .. "Dot"); shine:SetBlendMode("ADD"); shine:SetVertexColor(1, 0.95, 0.8); shine:SetSize(90, 26)
+  shine:SetPoint("CENTER", track, "LEFT", -45, 0); shine:SetAlpha(0)
+  local shineAG, shineMove = ag(shine), nil
+  if shineAG then
+    shineMove = shineAG:CreateAnimation("Translation"); shineMove:SetDuration(0.9); shineMove:SetOrder(1)
+    pcall(shineMove.SetSmoothing, shineMove, "IN_OUT")
+    alpha(shineAG, 0, 0.9, 0.15, nil, 1); alpha(shineAG, 0.9, 0, 0.3, 0.6, 1)
+  end
+  -- baren toner frem, naar den vises
+  local showAG = ag(bar)
+  if showAG then alpha(showAG, 0, 1, 0.35, nil, 1) end
+  bar:HookScript("OnShow", function() if DB and DB.barAnim ~= false and showAG then showAG:Stop(); showAG:Play() end end)
+
+  -- bjaelken glider hen til den nye XP i stedet for at hoppe
+  local tw = CreateFrame("Frame"); tw:Hide()
+  local cur, from, to, t = {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, 0
+  local DUR = 0.45
+  local function draw()
+    setSeg(segCur, 0, cur[1]); setSeg(segQuest, cur[1], cur[2]); setSeg(segRest, cur[2], cur[3])
+  end
+  tw:SetScript("OnUpdate", function(self, el)
+    t = t + el
+    local p = math.min(1, t / DUR)
+    local e = 1 - (1 - p) ^ 3
+    for i = 1, 3 do cur[i] = from[i] + (to[i] - from[i]) * e end
+    draw()
+    spark:ClearAllPoints(); spark:SetPoint("CENTER", track, "LEFT", TRW * cur[1], 0)
+    if p >= 1 then self:Hide() end
+  end)
+  INFO.barSet = function(c1, c2, c3, animate)
+    if animate and DB.barAnim ~= false and bar:IsVisible() then
+      from[1], from[2], from[3] = cur[1], cur[2], cur[3]
+      to[1], to[2], to[3] = c1, c2, c3
+      t = 0
+      if c1 > from[1] and sparkAG then
+        spark:ClearAllPoints(); spark:SetPoint("CENTER", track, "LEFT", TRW * from[1], 0)
+        sparkAG:Stop(); sparkAG:Play()
+      end
+      tw:Show()
+    else
+      tw:Hide()
+      cur[1], cur[2], cur[3] = c1, c2, c3
+      draw()
+    end
+  end
+  INFO.barDing = function()
+    if not DB or DB.barAnim == false or not bar:IsVisible() then return end
+    if flashAG then flashAG:Stop(); flashAG:Play() end
+    if shineAG and shineMove then shineMove:SetOffset(TRW + 90, 0); shineAG:Stop(); shineAG:Play() end
+  end
+end
+
 -- tallene under bjaelken paa een linje: navn lige foran tallet, fordelt over hele bredden
 local STAT_Y = -49
 local stats = {}
@@ -1253,9 +1332,11 @@ updateBar = function(r, head)
   local rs = math.min(restedXP(), math.max(0, mx - xp - q))
   local c1, c2, c3 = xp / mx, (xp + q) / mx, (xp + q + rs) / mx
   if bar._c1 ~= c1 or bar._c2 ~= c2 or bar._c3 ~= c3 then  -- flyt kun bjaelken naar XP har aendret sig
+    local animate = type(bar._c1) == "number" and bar._lvl == lvl and c1 >= bar._c1  -- glid kun fremad paa samme level
     bar._c1, bar._c2, bar._c3 = c1, c2, c3
-    setSeg(segCur, 0, c1); setSeg(segQuest, c1, c2); setSeg(segRest, c2, c3)
+    INFO.barSet(c1, c2, c3, animate)
   end
+  bar._lvl = lvl
   placeChips(bar, barChips, DB.showBuffsBar and activeBuffs() or {}, 12 + (bLevel:GetStringWidth() or 55) + 12, -14, true)
   INFO.goldOnBar()
   if not DB.showStats then hideStats(); return end
@@ -1942,6 +2023,7 @@ toggle(-170, "showRest", function() return DB.showRest end, function(v) DB.showR
 toggle(-198, "repBar", function() return DB.repBar ~= false end, function(v) DB.repBar = v end)
 toggle(-226, "goldBar", function() return DB.goldBar == true end, function(v) DB.goldBar = v end)
 toggle(-254, "goalBar", function() return DB.goalBar == true end, function(v) DB.goalBar = v end)
+toggle(-282, "barAnim", function() return DB.barAnim ~= false end, function(v) DB.barAnim = v end)
 
 -- fane 3: spilletid, quests og rested
 host = pages[3]
@@ -2185,6 +2267,7 @@ f:SetScript("OnEvent", function(self, event, a1, a2, ...)
       DB.ptimes[UnitLevel("player")] = total - atLevel  -- praecis start paa dette level
     end
   elseif event == "PLAYER_LEVEL_UP" then
+    INFO.barDing()
     goldTrack("level", a1)
     if type(a1) == "number" and DB.times[a1] == nil then DB.times[a1] = DB.play end  -- dinget gemmes altid, ogsaa hvis XP-beskeden kommer skaevt
     if a1 == MAXLVL and not DB.ding60 then DB.ding60 = time() end
