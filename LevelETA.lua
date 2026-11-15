@@ -36,6 +36,7 @@ local LOC = {
     standalone = "Works on its own. Uses ForeverXP Bar data too, when it is installed.",
     fxbFound = "ForeverXP Bar: found, its level history is used", fxbMissing = "ForeverXP Bar: not installed, using LevelETA's own data",
     goldFound = "GoldETA: found, your gold history is shared with it", goldMissing = "GoldETA: not installed, gold is only saved in the background",
+    showGold = "Show GoldETA in this window", goldHead = "GoldETA",
     showTimes = "Show level times", timesHead = "Level times", now = "now", noTimes = "No level times yet",
     avg = "Average per level", hm = "%dh %02dm", timesCount = "Levels in the list",
     foodTip = "Food buff, +5% XP from kills", bagTip = "Sleeping bag, +%d%% XP", nextStack = "+%d%% in %ds",
@@ -78,6 +79,7 @@ local LOC = {
     standalone = "Virker helt alene. Bruger også data fra ForeverXP Bar, hvis den er installeret.",
     fxbFound = "ForeverXP Bar: fundet, dens levelhistorik bruges", fxbMissing = "ForeverXP Bar: ikke installeret, bruger LevelETA's egne data",
     goldFound = "GoldETA: fundet, din guld-historik deles med den", goldMissing = "GoldETA: ikke installeret, guld gemmes kun i baggrunden",
+    showGold = "Vis GoldETA i vinduet", goldHead = "GoldETA",
     showTimes = "Vis level-tider", timesHead = "Level-tider", now = "nu", noTimes = "Ingen level-tider endnu",
     avg = "Snit pr. level", hm = "%dt %02dm", timesCount = "Levels på listen",
     foodTip = "Food buff, +5% XP fra kills", bagTip = "Sovepose, +%d%% XP", nextStack = "+%d%% om %ds",
@@ -1385,6 +1387,7 @@ local function drawSections(y)
     end
     local ok, h = pcall(sec.height)
     h = (ok and type(h) == "number") and h or 0
+    if DB.hideSec and DB.hideSec[sec.id] then h = 0 end  -- slaaet fra i LevelETA's indstillinger
     if h > 0 then
       if sec._y ~= y or sec._h ~= h then
         sec._y, sec._h = y, h
@@ -1644,6 +1647,9 @@ toggle(-114, "showWin", function() return not DB.hidden end, function(v) DB.hidd
 toggle(-142, "lock", function() return DB.locked end, function(v) DB.locked = v end)
 toggle(-170, "showMinimap", function() return DB.showMinimap end, function(v) DB.showMinimap = v end)
 slider(-202, "size", 0.6, 2.0, 0.05, function() return DB.scale end, function(v) DB.scale = v end, pctFmt)
+section(-236, "goldHead")
+toggle(-258, "showGold", function() return not (DB.hideSec and DB.hideSec.GoldETA) end,
+  function(v) DB.hideSec = DB.hideSec or {}; DB.hideSec.GoldETA = (not v) or nil end)
 colX = COL
 section(-92, "rowsSec")
 toggle(-114, "showToday", function() return DB.showToday end, function(v) DB.showToday = v end)
