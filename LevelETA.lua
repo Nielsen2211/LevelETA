@@ -35,11 +35,12 @@ local LOC = {
     tipLeft = "Left click: show or hide", tipRight = "Right click: settings", nextLvl = "Next level",
     standalone = "Works on its own. Uses ForeverXP Bar data too, when it is installed.",
     fxbFound = "ForeverXP Bar: found, its level history is used", fxbMissing = "ForeverXP Bar: not installed, using LevelETA's own data",
+    goldFound = "GoldETA: found, your gold history is shared with it", goldMissing = "GoldETA: not installed, gold is only saved in the background",
     showTimes = "Show level times", timesHead = "Level times", now = "now", noTimes = "No level times yet",
     avg = "Average per level", hm = "%dh %02dm", timesCount = "Levels in the list",
     foodTip = "Food buff, +5% XP from kills", bagTip = "Sleeping bag, +%d%% XP", nextStack = "+%d%% in %ds",
     sleepBag = "Sleeping bag", campfire = "Campfire", campIn = "Camp buffs in %ds", campReady = "Camp buffs ready",
-    fullRested = "Fully rested  +3%", showRest = "Sleeping bag and campfire bar",
+    fullRested = "Fully rested  +3%", showRest = "Bag and campfire bar",
     barHead = "XP bar", showBar = "Show XP bar", hideBlizz = "Hide Blizzard's XP bar", barSize = "Bar size",
     xph = "XP per hour", nextLevel = "Next level", questsReady = "Quests ready", rested = "Rested",
     xpLeft = "XP left", killsTo = "Kills to level", questsTo = "Quests to level", session = "This session",
@@ -76,11 +77,12 @@ local LOC = {
     tipLeft = "Venstreklik: vis eller skjul", tipRight = "Højreklik: indstillinger", nextLvl = "Næste level",
     standalone = "Virker helt alene. Bruger også data fra ForeverXP Bar, hvis den er installeret.",
     fxbFound = "ForeverXP Bar: fundet, dens levelhistorik bruges", fxbMissing = "ForeverXP Bar: ikke installeret, bruger LevelETA's egne data",
+    goldFound = "GoldETA: fundet, din guld-historik deles med den", goldMissing = "GoldETA: ikke installeret, guld gemmes kun i baggrunden",
     showTimes = "Vis level-tider", timesHead = "Level-tider", now = "nu", noTimes = "Ingen level-tider endnu",
     avg = "Snit pr. level", hm = "%dt %02dm", timesCount = "Levels på listen",
     foodTip = "Food buff, +5% XP fra kills", bagTip = "Sovepose, +%d%% XP", nextStack = "+%d%% om %ds",
     sleepBag = "Sovepose", campfire = "Lejrbål", campIn = "Lejr-buffs om %ds", campReady = "Lejr-buffs klar",
-    fullRested = "Fuldt udhvilet  +3%", showRest = "Sovepose- og lejrbål-bar",
+    fullRested = "Fuldt udhvilet  +3%", showRest = "Sovepose og lejrbål",
     barHead = "XP-bar", showBar = "Vis XP-bar", hideBlizz = "Skjul Blizzards XP-bar", barSize = "Barens størrelse",
     xph = "XP pr. time", nextLevel = "Næste level", questsReady = "Quests klar", rested = "Rested",
     xpLeft = "XP tilbage", killsTo = "Kills til level", questsTo = "Quests til level", session = "Denne session",
@@ -1524,7 +1526,7 @@ do
 -- ---------- indstillinger ----------
 local SW, COL = 520, 260
 S = CreateFrame("Frame", "LevelETASettings", UIParent)
-S:SetSize(SW, 482); S:SetPoint("CENTER"); S:SetFrameStrata("DIALOG"); S:Hide()
+S:SetSize(SW, 498); S:SetPoint("CENTER"); S:SetFrameStrata("DIALOG"); S:Hide()
 skin(S, "Wide", 1040, 2048)
 movable(S, function() return true end)
 S:SetScript("OnDragStop", S.StopMovingOrSizing)
@@ -1698,6 +1700,9 @@ label(infoText, "standalone")
 local fxbDot = S:CreateTexture(nil, "ARTWORK")
 fxbDot:SetSize(7, 7); fxbDot:SetPoint("TOPLEFT", 19, -410); fxbDot:SetTexture(TEX .. "Dot")
 local fxbText = fs(S, F_SEMI, 11); fxbText:SetPoint("TOPLEFT", 32, -408)
+local goldDot = S:CreateTexture(nil, "ARTWORK")
+goldDot:SetSize(7, 7); goldDot:SetPoint("TOPLEFT", 19, -426); goldDot:SetTexture(TEX .. "Dot")
+local goldText = fs(S, F_SEMI, 11); goldText:SetPoint("TOPLEFT", 32, -424)
 
 -- knapper i bunden
 local langBtn = pill("", 140); langBtn:SetPoint("BOTTOMLEFT", 18, 16); label(langBtn.text, "language")
@@ -1719,6 +1724,13 @@ S:SetScript("OnShow", function()
     fxbDot:SetVertexColor(0.36, 1, 0.48); fxbText:SetText(T("fxbFound")); fxbText:SetTextColor(0.85, 0.87, 0.92)
   else
     fxbDot:SetVertexColor(0.54, 0.56, 0.6); fxbText:SetText(T("fxbMissing")); fxbText:SetTextColor(0.55, 0.58, 0.64)
+  end
+  local loaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
+  local okG, hasG = pcall(loaded or function() end, "GoldETA")
+  if okG and hasG then
+    goldDot:SetVertexColor(0.36, 1, 0.48); goldText:SetText(T("goldFound")); goldText:SetTextColor(0.85, 0.87, 0.92)
+  else
+    goldDot:SetVertexColor(0.54, 0.56, 0.6); goldText:SetText(T("goldMissing")); goldText:SetTextColor(0.55, 0.58, 0.64)
   end
   for _, c in ipairs(controls) do c.load() end
   showTab(DB.tab or 1)
