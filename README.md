@@ -47,7 +47,7 @@ When you have an XP buff, it is also shown in the window under the three rows.
 
 If **GoldETA** is installed, your mount goal is shown in LevelETA's window, right under the level rows: your gold, gold per hour, when the gold is ready, and whether you have it before level 40.
 
-LevelETA also keeps a small gold history in the background (income and spending per minute of play, and your gold at each level up). It is not shown in LevelETA. It is there so GoldETA has your gold per hour from the first minute, even if you install it later.
+LevelETA also keeps a small gold history in the background: income and spending from the last 3 hours of play (spending at a vendor or flight master is marked as such), your total income over all play time, and your gold at each level up. It is not shown in LevelETA. It is there so GoldETA has your gold per hour from the first minute, even if you install it later.
 
 Other addons can do the same through `LevelETA_API` (`RegisterSection`, `GetLevelETA`, `PlayETA`, `GetGoldHistory`, `Refresh`).
 

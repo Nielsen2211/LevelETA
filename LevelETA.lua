@@ -1440,32 +1440,38 @@ local function refresh()
 end
 
 -- ---------- guld: gemmes kun i baggrunden til GoldETA (vises ikke i LevelETA) ----------
--- en raekke pr. minuts spil med guld-aendringer: {p = spilletid, i = indtaegt, o = udgift} (kobber)
+-- samples = {{p = spilletid, c = kobber, k = "in" | "repair" | "flight" | "out"}}, kun de sidste ca. 3 timers spil.
+-- Udgifter hos en vendor taeller som "repair", hos en flight master som "flight" (GoldETA traekker kun dem fra tempoet).
 local goldTrack
 do
-  local lastMoney
-  local MAXS = 3000
+  local lastMoney, merchantUntil, taxiUntil = nil, 0, 0
+  local KEEP = 10800
   goldTrack = function(kind, a1)
     if not DB or not GetMoney then return end
-    DB.gold = DB.gold or {s = {}, lvl = {}}
     local g = DB.gold
+    if type(g) ~= "table" or g.v ~= 2 then g = {v = 2, s = {}, lvl = {}, life = {p0 = DB.play, c = 0}}; DB.gold = g end
+    local now = clock()
+    if kind == "merchant" then merchantUntil = a1 and math.huge or now + 1.5; return end
+    if kind == "taxi" then taxiUntil = a1 and math.huge or now + 3; return end
     local m = GetMoney()
     if kind == "world" then lastMoney = m; return end
     if kind == "level" then
-      if type(a1) == "number" and not g.lvl[a1] then g.lvl[a1] = {p = DB.play, m = m} end
+      if type(a1) == "number" and not g.lvl[a1] then g.lvl[a1] = m end
       lastMoney = m; return
     end
     if not lastMoney then lastMoney = m; return end
     local d = m - lastMoney
     lastMoney = m
     if d == 0 then return end
-    local s, p = g.s, math.floor(DB.play)
+    local k = d > 0 and "in" or (now < taxiUntil and "flight") or (now < merchantUntil and "repair") or "out"
+    local c, p = math.abs(d), math.floor(DB.play)
+    local s = g.s
     local last = s[#s]
-    if not (last and p - last.p < 60) then
-      last = {p = p, i = 0, o = 0}; s[#s + 1] = last
-      if #s > MAXS then table.remove(s, 1) end
-    end
-    if d > 0 then last.i = last.i + d else last.o = last.o - d end
+    if last and last.k == k and p - last.p < 60 then last.c = last.c + c  -- samme slags inden for et minut: en raekke
+    else s[#s + 1] = {p = p, c = c, k = k} end
+    while s[1] and s[1].p < p - KEEP do table.remove(s, 1) end
+    if k == "in" then g.life.c = g.life.c + c
+    elseif k == "repair" or k == "flight" then g.life.c = g.life.c - c end
   end
 end
 
@@ -1474,12 +1480,14 @@ do
   local pending = false
   LevelETA_API = {
     version = 2,
-    -- guld-historik LevelETA har gemt i baggrunden (ogsaa foer GoldETA blev installeret):
-    -- samples = {{p = spilletid, i = indtaegt, o = udgift}, ...} (kobber, et pr. minut), levels = {[level] = {p, m}}
+    -- guld-historik LevelETA har gemt i baggrunden (ogsaa foer GoldETA blev installeret), i GoldETA's format:
+    -- {version = 1, play, samples = {{p, c, k}}, life = {p, c}, perLevel = {[level] = kobber}}
     GetGoldHistory = function()
       if not DB then return nil end
-      local g = DB.gold or {s = {}, lvl = {}}
-      return {samples = g.s, levels = g.lvl, play = DB.play, money = GetMoney and GetMoney() or 0}
+      local g = (type(DB.gold) == "table" and DB.gold.v == 2) and DB.gold or nil
+      if not g then return {version = 1, play = DB.play, samples = {}, life = {p = 0, c = 0}, perLevel = {}} end
+      return {version = 1, play = DB.play, samples = g.s,
+        life = {p = math.floor(math.max(0, DB.play - (g.life.p0 or DB.play))), c = g.life.c}, perLevel = g.lvl}
     end,
     -- klokkeslaet (unix-tid) hvor du naar et level, med dine spilletider. nil hvis du allerede er der
     GetLevelETA = function(level)
@@ -1819,6 +1827,7 @@ f:RegisterEvent("QUEST_LOG_UPDATE")
 f:RegisterEvent("UPDATE_EXHAUSTION")
 f:RegisterEvent("PLAYER_UPDATE_RESTING")
 f:RegisterEvent("PLAYER_MONEY")
+for _, ev in ipairs({"MERCHANT_SHOW", "MERCHANT_CLOSED", "TAXIMAP_OPENED", "TAXIMAP_CLOSED"}) do pcall(f.RegisterEvent, f, ev) end
 if f.RegisterUnitEvent then f:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player") else f:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED") end
 f:RegisterEvent("TIME_PLAYED_MSG")
 if f.RegisterUnitEvent then f:RegisterUnitEvent("UNIT_AURA", "player") else f:RegisterEvent("UNIT_AURA") end
@@ -1868,6 +1877,10 @@ f:SetScript("OnEvent", function(self, event, a1, a2, ...)
     placeButton()
   elseif event == "PLAYER_MONEY" then
     goldTrack("money")
+  elseif event == "MERCHANT_SHOW" or event == "MERCHANT_CLOSED" then
+    goldTrack("merchant", event == "MERCHANT_SHOW")
+  elseif event == "TAXIMAP_OPENED" or event == "TAXIMAP_CLOSED" then
+    goldTrack("taxi", event == "TAXIMAP_OPENED")
   elseif event == "PLAYER_ENTERING_WORLD" then
     goldTrack("world")
     if a1 or not DB.sess then DB.sess = {start = time(), xp = 0, kills = 0, quests = 0, levels = 0} end  -- ny login
