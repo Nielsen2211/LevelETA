@@ -622,11 +622,38 @@ local f = CreateFrame("Frame", "LevelETAFrame", UIParent)
 f:SetSize(W, 120)
 skin(f, "Panel", 520, 1024)
 movable(f, function() return not DB.locked end)
+-- ---------- LevelETA og GoldETA klikker sammen i stedet for at ligge oven i hinanden ----------
+-- finder den naermeste side af other (under, over, hoejre, venstre), hvis me er taet paa eller overlapper.
+-- Returnerer siden og me's nye oeverste venstre hjoerne i me's egne enheder (fra UIParent nederst til venstre).
+local function snapSide(me, other, reach)
+  if not (other and other.IsShown and other:IsShown() and me.GetLeft and other.GetLeft) then return nil end
+  local s1, s2 = me:GetEffectiveScale(), other:GetEffectiveScale()
+  local l, r, t, b = me:GetLeft(), me:GetRight(), me:GetTop(), me:GetBottom()
+  local L, R, T, B = other:GetLeft(), other:GetRight(), other:GetTop(), other:GetBottom()
+  if not (l and r and t and b and L and R and T and B) then return nil end
+  l, r, t, b, L, R, T, B = l * s1, r * s1, t * s1, b * s1, L * s2, R * s2, T * s2, B * s2
+  local g = 4 * s1
+  local w, h = r - l, t - b
+  local overlap = l < R and r > L and b < T and t > B
+  local best, bd, bx, by
+  for _, c in ipairs({{"below", L, B - g}, {"above", L, T + g + h}, {"right", R + g, T}, {"left", L - g - w, T}}) do
+    local d = math.sqrt((c[2] - l) ^ 2 + (c[3] - t) ^ 2)
+    if not bd or d < bd then best, bd, bx, by = c[1], d, c[2], c[3] end
+  end
+  if overlap or bd <= reach * s1 then return best, bx / s1, by / s1 end
+end
 f:SetScript("OnDragStop", function(self)
   self:StopMovingOrSizing()
+  -- er GoldETA's vindue ikke klikket fast paa LevelETA, klikker LevelETA sig fast ved siden af det
+  local g = _G.GoldETAFrame
+  if g and not (type(GoldETADB) == "table" and GoldETADB.dock) then
+    local side, x, y = snapSide(self, g, 30)
+    if side then self:ClearAllPoints(); self:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y) end
+  end
   local p, _, rp, x, y = self:GetPoint()
   DB.point = {p, rp, x, y}
 end)
+if f.SetToplevel then f:SetToplevel(true) end  -- det vindue du klikker paa, ligger oeverst
 header(f, "|cffffffffLevel|r|cffffd24aETA|r")
 
 -- raekke: label til venstre, vaerdi til hoejre, tynd streg eller bjaelke under
