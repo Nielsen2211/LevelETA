@@ -38,6 +38,8 @@ local LOC = {
     showTimes = "Show level times", timesHead = "Level times", now = "now", noTimes = "No level times yet",
     avg = "Average per level", hm = "%dh %02dm", timesCount = "Levels in the list",
     foodTip = "Food buff, +5% XP from kills", bagTip = "Sleeping bag, +%d%% XP", nextStack = "+%d%% in %ds",
+    sleepBag = "Sleeping bag", campfire = "Campfire", campIn = "Camp buffs in %ds", campReady = "Camp buffs ready",
+    fullRested = "Fully rested  +3%", showRest = "Sleeping bag and campfire bar",
     barHead = "XP bar", showBar = "Show XP bar", hideBlizz = "Hide Blizzard's XP bar", barSize = "Bar size",
     xph = "XP per hour", nextLevel = "Next level", questsReady = "Quests ready", rested = "Rested",
     xpLeft = "XP left", killsTo = "Kills to level", questsTo = "Quests to level", session = "This session",
@@ -77,6 +79,8 @@ local LOC = {
     showTimes = "Vis level-tider", timesHead = "Level-tider", now = "nu", noTimes = "Ingen level-tider endnu",
     avg = "Snit pr. level", hm = "%dt %02dm", timesCount = "Levels på listen",
     foodTip = "Food buff, +5% XP fra kills", bagTip = "Sovepose, +%d%% XP", nextStack = "+%d%% om %ds",
+    sleepBag = "Sovepose", campfire = "Lejrbål", campIn = "Lejr-buffs om %ds", campReady = "Lejr-buffs klar",
+    fullRested = "Fuldt udhvilet  +3%", showRest = "Sovepose- og lejrbål-bar",
     barHead = "XP-bar", showBar = "Vis XP-bar", hideBlizz = "Skjul Blizzards XP-bar", barSize = "Barens størrelse",
     xph = "XP pr. time", nextLevel = "Næste level", questsReady = "Quests klar", rested = "Rested",
     xpLeft = "XP tilbage", killsTo = "Kills til level", questsTo = "Quests til level", session = "Denne session",
@@ -113,7 +117,7 @@ local defaults = {
   showBar = true, hideBlizz = true, barScale = 1, questRewards = {},
 
   showToday = true, showNext = true, show60 = true, showBuffsWin = true, showMinimap = true,
-  showStats = true, showBuffsBar = true, tab = 1, buffWarn = true, foodWarn = 20, bagWarn = 5,
+  showStats = true, showBuffsBar = true, showRest = true, tab = 1, buffWarn = true, foodWarn = 20, bagWarn = 5,
 }
 
 -- ---------- tid og datoer ----------
@@ -230,17 +234,19 @@ end
 local function scanBuffs()
   if InCombatLockdown and InCombatLockdown() then return end  -- buffs kan kun laeses uden for kamp
   local fed, bag, stacks, fedIcon, bagIcon
+  local campNear, campEnd, campDur, campIcon, campBen
   local ok = pcall(function()
     for i = 1, 80 do
-      local name, id, exp, count, icon
+      local name, id, exp, count, icon, dur
       if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
         local a = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
         if not a then break end
         name, id, exp, count, icon = a.name, a.spellId, a.expirationTime, a.applications, a.icon
+        dur = num(a.duration)
       elseif UnitBuff then
-        local n, ic, c, _, _, e, _, _, _, sid = UnitBuff("player", i)
+        local n, ic, c, _, du, e, _, _, _, sid = UnitBuff("player", i)
         if not n then break end
-        name, id, exp, count, icon = n, sid, e, c, ic
+        name, id, exp, count, icon, dur = n, sid, e, c, ic, num(du)
       else
         break
       end
@@ -251,6 +257,11 @@ local function scanBuffs()
           if not fed or exp > fed then fed, fedIcon = exp, icon end
         elseif num(id) == BAG_ID or n:find("well-rested", 1, true) or n:find("well rested", 1, true) then
           bag, stacks, bagIcon = exp, num(count), icon
+        elseif n:find("camp benefits", 1, true) then
+          campBen = exp
+        else
+          if n:find("campfire", 1, true) then campNear = true end
+          if dur and dur >= 50 and dur <= 70 then campEnd, campDur, campIcon = exp, dur, icon end  -- et-minuts nedtaellingen ved baalet
         end
       end
     end
@@ -258,7 +269,15 @@ local function scanBuffs()
   if not ok then return end
   -- sovepose: en stak pr. hele minut man ligger i den (op til 3). Naar en ny stak kommer, er naeste et minut efter.
   local newStacks = bag and math.max(1, math.min(3, (stacks and stacks > 0) and stacks or 1)) or 0
-  if newStacks > (buffs.bagStacks or 0) and IsResting and IsResting() then buffs.sleepAt = clock() end
+  if newStacks > (buffs.bagStacks or 0) and IsResting and IsResting() then
+    buffs.sleepAt = clock()
+    if newStacks >= 3 then buffs.bagFullAt = clock() end
+  end
+  -- lejrbaal: nedtaellingen kendes kun mens du er ved baalet
+  if campNear and campEnd then buffs.campEnd, buffs.campDur, buffs.campIcon = campEnd, campDur, campIcon
+  else buffs.campEnd = nil end
+  if campBen and not buffs.campBen then buffs.campDoneAt = clock() end
+  buffs.campBen = campBen
   buffs.fedUntil, buffs.bagUntil = fed, bag
   buffs.fedIcon, buffs.bagIcon = fedIcon, bagIcon
   buffs.bagStacks = bag and math.max(1, math.min(3, (stacks and stacks > 0) and stacks or 1)) or nil
@@ -781,10 +800,8 @@ local function activeBuffs()
   local list = {}
   local f, b = fedLeft(), bagLeft()
   if f > 0 then list[#list + 1] = {icon = buffs.fedIcon or FOOD_ICON, pct = "+5%", left = f, untilT = buffs.fedUntil, warn = foodSoon} end
-  local nxt, st = nextStackAt()
-  if b > 0 or nxt then
-    list[#list + 1] = {icon = buffs.bagIcon or buffs.castIcon or BAG_ICON, pct = "+" .. ((b > 0 and buffs.bagStacks) or 0) .. "%",
-      left = b, untilT = buffs.bagUntil, warn = bagSoon, nextAt = nxt, nextPct = nxt and (st + 1) or nil}
+  if b > 0 then
+    list[#list + 1] = {icon = buffs.bagIcon or BAG_ICON, pct = "+" .. (buffs.bagStacks or 1) .. "%", left = b, untilT = buffs.bagUntil, warn = bagSoon}
   end
   return list
 end
@@ -1117,6 +1134,101 @@ local function applyBlizz()
   end
 end
 
+-- ---------- hvile-bar: sovepose og lejrbaal, som en cast bar under XP-baren ----------
+local restUpdate
+do
+local CAMP_ICON = "Interface\\Icons\\Spell_Fire_Fire"
+local GOLD_C = {1, 0.82, 0.29}
+local restRows = {}
+local function restRow(i)
+  local r = restRows[i]
+  if r then return r end
+  r = CreateFrame("Frame", nil, bar); r:SetHeight(30)
+  -- samme flade panel som baren, i en lav udgave (top og bund deler hoejden)
+  local top = r:CreateTexture(nil, "BACKGROUND"); top:SetPoint("TOPLEFT"); top:SetPoint("TOPRIGHT"); top:SetHeight(15)
+  top:SetTexture(TEX .. "BarTop"); top:SetTexCoord(0, 920 / 1024, 0, 30 / 64)
+  local bot = r:CreateTexture(nil, "BACKGROUND"); bot:SetPoint("BOTTOMLEFT"); bot:SetPoint("BOTTOMRIGHT"); bot:SetHeight(15)
+  bot:SetTexture(TEX .. "BarBottom"); bot:SetTexCoord(0, 920 / 1024, 10 / 64, 40 / 64)
+  r.icon = r:CreateTexture(nil, "ARTWORK"); r.icon:SetSize(16, 16); r.icon:SetPoint("LEFT", 12, 0)
+  r.title = fs(r, F_BOLD, 11); r.title:SetPoint("LEFT", r.icon, "RIGHT", 6, 0); r.title:SetTextColor(0.91, 0.92, 0.94)
+  r.pips = {}
+  for k = 1, 3 do
+    local p = r:CreateTexture(nil, "ARTWORK"); p:SetSize(7, 7); p:SetTexture(TEX .. "Dot")
+    r.pips[k] = p
+  end
+  r.right = fs(r, F_BOLD, 11); r.right:SetPoint("RIGHT", -12, 0); r.right:SetJustifyH("RIGHT")
+  r.track = r:CreateTexture(nil, "ARTWORK"); r.track:SetHeight(6); r.track:SetColorTexture(1, 1, 1, 0.08)
+  r.fill = r:CreateTexture(nil, "OVERLAY"); r.fill:SetHeight(6); r.fill:SetPoint("LEFT", r.track, "LEFT")
+  restRows[i] = r
+  return r
+end
+local holder = CreateFrame("Frame", nil, bar); holder:SetSize(1, 1); holder:Hide()
+local data, lastCalc = {}, 0
+local function calc()
+  local now = clock()
+  local list = {}
+  local nxt, st = nextStackAt()
+  if nxt then
+    list[#list + 1] = {icon = buffs.bagIcon or buffs.castIcon or BAG_ICON, title = T("sleepBag"), pips = st, s0 = nxt - 60, s1 = nxt,
+      text = function(left) return string.format(T("nextStack"), st + 1, math.ceil(left)) end}
+  elseif buffs.bagFullAt and now - buffs.bagFullAt < 4 then
+    list[#list + 1] = {icon = buffs.bagIcon or BAG_ICON, title = T("sleepBag"), pips = 3, done = T("fullRested")}
+  end
+  if buffs.campEnd and buffs.campEnd > now then
+    local d = buffs.campDur or 60
+    list[#list + 1] = {icon = buffs.campIcon or CAMP_ICON, title = T("campfire"), s0 = buffs.campEnd - d, s1 = buffs.campEnd,
+      text = function(left) return string.format(T("campIn"), math.ceil(left)) end}
+  elseif buffs.campDoneAt and now - buffs.campDoneAt < 4 then
+    list[#list + 1] = {icon = CAMP_ICON, title = T("campfire"), done = T("campReady")}
+  end
+  return list
+end
+local function draw()
+  local now = clock()
+  for i, it in ipairs(data) do
+    local r = restRow(i)
+    if r._it ~= it then  -- ny raekke: saet det faste op en gang
+      r._it = it
+      r.icon:SetTexture(it.icon); r.title:SetText(it.title)
+      local x = 12 + 16 + 6 + (r.title:GetStringWidth() or 60) + 10
+      for k = 1, 3 do
+        local p = r.pips[k]
+        p:SetShown(it.pips ~= nil); p:ClearAllPoints(); p:SetPoint("LEFT", x + (k - 1) * 11, 0)
+        if (it.pips or 0) >= k then p:SetVertexColor(GOLD_C[1], GOLD_C[2], GOLD_C[3]) else p:SetVertexColor(1, 1, 1, 0.16) end
+      end
+      r.x0 = x + (it.pips and 3 * 11 + 6 or 0)
+      r:ClearAllPoints(); r:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -4 - (i - 1) * 34); r:SetPoint("TOPRIGHT", bar, "BOTTOMRIGHT", 0, -4 - (i - 1) * 34)
+      r:Show()
+    end
+    local frac, txt
+    if it.done then
+      frac, txt = 1, it.done
+      r.right:SetTextColor(GOLD_C[1], GOLD_C[2], GOLD_C[3]); r.fill:SetColorTexture(1, 0.82, 0.29, 0.9)
+    else
+      local left = math.max(0, it.s1 - now)
+      frac, txt = math.min(1, math.max(0, 1 - left / math.max(1, it.s1 - it.s0))), it.text(left)
+      r.right:SetTextColor(0.62, 0.82, 1); r.fill:SetColorTexture(0.62, 0.82, 1, 0.92)
+    end
+    r.right:SetText(txt)
+    local tx1 = (r:GetWidth() or 460) - 12 - (r.right:GetStringWidth() or 80) - 12
+    local tw = math.max(20, tx1 - r.x0)
+    if r._tw ~= tw then r._tw = tw; r.track:ClearAllPoints(); r.track:SetPoint("LEFT", r.x0, 0); r.track:SetWidth(tw) end
+    r.fill:SetWidth(math.max(1, tw * frac))
+  end
+  for i = #data + 1, #restRows do restRows[i]:Hide(); restRows[i]._it = nil end
+end
+holder:SetScript("OnUpdate", function(_, el)  -- koerer kun mens baren vises (hoejst et par minutter ad gangen)
+  lastCalc = lastCalc + el
+  if lastCalc >= 0.5 then lastCalc = 0; data = calc(); if #data == 0 then holder:Hide(); draw(); return end end
+  draw()
+end)
+restUpdate = function()
+  if not DB or DB.showRest == false or not bar:IsShown() then data = {}; draw(); holder:Hide(); return end
+  data = calc(); lastCalc = 0
+  if #data > 0 then holder:Show(); draw() else holder:Hide(); draw() end
+end
+end
+
 -- ---------- advarsel naar en XP-buff er ved at loebe ud ----------
 local checkBuffWarnings
 do
@@ -1238,6 +1350,7 @@ local function refresh()
   INFO.r = r
   updateBar(r, head)
   if DB.hideBlizz then applyBlizz() end  -- billigt: saetter kun alpha igen, hvis spillet har aendret den
+  restUpdate()
   INFO.mh, INFO.mhOn = nil, false
   if t0 then  -- egen maaling til /lp perf
     local ms = debugprofilestop() - t0
@@ -1398,6 +1511,7 @@ colX = COL
 section(-92, "onBar")
 toggle(-114, "showStats", function() return DB.showStats end, function(v) DB.showStats = v end)
 toggle(-142, "showBuffsBar", function() return DB.showBuffsBar end, function(v) DB.showBuffsBar = v end)
+toggle(-170, "showRest", function() return DB.showRest end, function(v) DB.showRest = v end)
 
 -- fane 3: spilletid, quests og rested
 host = pages[3]
@@ -1529,7 +1643,7 @@ local lastXP, lastMax, lastLevel, lastEx
 local acc = 0
 -- buffs og rested vises med det samme: samles op og opdateres en gang lidt efter (flere beskeder paa en gang = en opdatering)
 local soonPending = false
-local function buffKey() return tostring(buffs.fedUntil) .. tostring(buffs.bagUntil) .. tostring(buffs.bagStacks) end
+local function buffKey() return tostring(buffs.fedUntil) .. tostring(buffs.bagUntil) .. tostring(buffs.bagStacks) .. tostring(buffs.campEnd) .. tostring(buffs.campBen) end
 local function updateSoon(checkBuffs)
   if soonPending then return end
   soonPending = true
