@@ -37,7 +37,7 @@ local LOC = {
     fxbFound = "ForeverXP Bar: found, its level history is used", fxbMissing = "ForeverXP Bar: not installed, using LevelETA's own data",
     showTimes = "Show level times", timesHead = "Level times", now = "now", noTimes = "No level times yet",
     avg = "Average per level", hm = "%dh %02dm", timesCount = "Levels in the list",
-    foodTip = "Food buff, +5% XP from kills", bagTip = "Sleeping bag, +%d%% XP",
+    foodTip = "Food buff, +5% XP from kills", bagTip = "Sleeping bag, +%d%% XP", nextStack = "+%d%% in %ds",
     barHead = "XP bar", showBar = "Show XP bar", hideBlizz = "Hide Blizzard's XP bar", barSize = "Bar size",
     xph = "XP per hour", nextLevel = "Next level", questsReady = "Quests ready", rested = "Rested",
     xpLeft = "XP left", killsTo = "Kills to level", questsTo = "Quests to level", session = "This session",
@@ -76,7 +76,7 @@ local LOC = {
     fxbFound = "ForeverXP Bar: fundet, dens levelhistorik bruges", fxbMissing = "ForeverXP Bar: ikke installeret, bruger LevelETA's egne data",
     showTimes = "Vis level-tider", timesHead = "Level-tider", now = "nu", noTimes = "Ingen level-tider endnu",
     avg = "Snit pr. level", hm = "%dt %02dm", timesCount = "Levels på listen",
-    foodTip = "Food buff, +5% XP fra kills", bagTip = "Sovepose, +%d%% XP",
+    foodTip = "Food buff, +5% XP fra kills", bagTip = "Sovepose, +%d%% XP", nextStack = "+%d%% om %ds",
     barHead = "XP-bar", showBar = "Vis XP-bar", hideBlizz = "Skjul Blizzards XP-bar", barSize = "Barens størrelse",
     xph = "XP pr. time", nextLevel = "Næste level", questsReady = "Quests klar", rested = "Rested",
     xpLeft = "XP tilbage", killsTo = "Kills til level", questsTo = "Quests til level", session = "Denne session",
@@ -256,6 +256,9 @@ local function scanBuffs()
     end
   end)
   if not ok then return end
+  -- sovepose: en stak pr. hele minut man ligger i den (op til 3). Naar en ny stak kommer, er naeste et minut efter.
+  local newStacks = bag and math.max(1, math.min(3, (stacks and stacks > 0) and stacks or 1)) or 0
+  if newStacks > (buffs.bagStacks or 0) and IsResting and IsResting() then buffs.sleepAt = clock() end
   buffs.fedUntil, buffs.bagUntil = fed, bag
   buffs.fedIcon, buffs.bagIcon = fedIcon, bagIcon
   buffs.bagStacks = bag and math.max(1, math.min(3, (stacks and stacks > 0) and stacks or 1)) or nil
@@ -765,11 +768,24 @@ local BAG_ICON = "Interface\\Icons\\INV_Drink_15"
 -- hvor laenge foer en buff loeber ud der advares (indstillinger: sekunder for food, minutter for soveposen)
 local function foodSoon() return DB.foodWarn or 20 end
 local function bagSoon() return (DB.bagWarn or 5) * 60 end
+-- ligger du i soveposen, og mangler der stakke: tidspunktet for naeste stak (ellers nil)
+local function nextStackAt()
+  if not buffs.sleepAt or not (IsResting and IsResting()) then return nil end
+  local st = bagLeft() > 0 and (buffs.bagStacks or 0) or 0
+  if st >= 3 then return nil end
+  local t = buffs.sleepAt + 60
+  if clock() > t + 15 then return nil end  -- ingen stak kom: du er staaet op
+  return t, st
+end
 local function activeBuffs()
   local list = {}
   local f, b = fedLeft(), bagLeft()
   if f > 0 then list[#list + 1] = {icon = buffs.fedIcon or FOOD_ICON, pct = "+5%", left = f, untilT = buffs.fedUntil, warn = foodSoon} end
-  if b > 0 then list[#list + 1] = {icon = buffs.bagIcon or BAG_ICON, pct = "+" .. (buffs.bagStacks or 1) .. "%", left = b, untilT = buffs.bagUntil, warn = bagSoon} end
+  local nxt, st = nextStackAt()
+  if b > 0 or nxt then
+    list[#list + 1] = {icon = buffs.bagIcon or buffs.castIcon or BAG_ICON, pct = "+" .. ((b > 0 and buffs.bagStacks) or 0) .. "%",
+      left = b, untilT = buffs.bagUntil, warn = bagSoon, nextAt = nxt, nextPct = nxt and (st + 1) or nil}
+  end
   return list
 end
 
@@ -806,6 +822,12 @@ local function layoutChips(store)
   end
 end
 local function chipTime(c)
+  if type(c.nextAt) == "number" then  -- i soveposen: nedtaelling til naeste stak
+    local s = math.max(0, math.ceil(c.nextAt - clock()))
+    c.time:SetText(string.format(T("nextStack"), c.nextPct, s))
+    c.soon = false; c.time:SetTextColor(0.62, 0.82, 1)
+    return
+  end
   local left = c.untilT and (c.untilT - clock()) or 0
   c.time:SetText(buffTime(left))
   c.soon = c.warn and left <= c.warn() or false
@@ -824,7 +846,7 @@ placeChips = function(parent, store, list, x, y, small)
       c.time = fs(c, F_SEMI, fsz); c.time:SetPoint("LEFT", c.pct, "RIGHT", 3, 0); c.time:SetTextColor(0.55, 0.58, 0.64)
       store[i] = c
     end
-    c.isz, c.untilT, c.warn = isz, b.untilT, b.warn
+    c.isz, c.untilT, c.warn, c.nextAt, c.nextPct = isz, b.untilT, b.warn, b.nextAt, b.nextPct
     c.icon:SetTexture(b.icon); c.pct:SetText(b.pct)
     chipTime(c)
     c:Show()
@@ -1531,6 +1553,7 @@ f:RegisterEvent("PLAYER_LEVEL_UP")
 f:RegisterEvent("QUEST_LOG_UPDATE")
 f:RegisterEvent("UPDATE_EXHAUSTION")
 f:RegisterEvent("PLAYER_UPDATE_RESTING")
+if f.RegisterUnitEvent then f:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player") else f:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED") end
 f:RegisterEvent("TIME_PLAYED_MSG")
 if f.RegisterUnitEvent then f:RegisterUnitEvent("UNIT_AURA", "player") else f:RegisterEvent("UNIT_AURA") end
 f:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -1559,7 +1582,7 @@ local function killXP(msg)
   return ok and tonumber(n) or nil
 end
 
-f:SetScript("OnEvent", function(self, event, a1, a2)
+f:SetScript("OnEvent", function(self, event, a1, a2, ...)
   if event == "ADDON_LOADED" and a1 == ADDON then
     LevelETADB = LevelETADB or {}
     DB = LevelETADB
@@ -1627,7 +1650,21 @@ f:SetScript("OnEvent", function(self, event, a1, a2)
     if lastEx and ex > lastEx then lastEx = ex end  -- rested steg (inn, telt), ikke bonus
     updateSoon(false)  -- vis ny rested med det samme
   elseif event == "PLAYER_UPDATE_RESTING" then
+    -- lagt sig i soveposen (lagt ud inden for de sidste 3 min): foerste stak kommer om et minut
+    if IsResting and IsResting() and buffs.castAt and clock() - buffs.castAt < 180 then buffs.sleepAt = clock()
+    elseif IsResting and not IsResting() then buffs.sleepAt = nil end
     updateSoon(false)
+  elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+    if a1 == "player" then
+      local id = ...  -- (unit, castGUID, spellID): spellID er det tredje
+      local name = id and ((C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(id)) or (GetSpellInfo and GetSpellInfo(id)))
+      if type(name) == "string" and not (issecretvalue and issecretvalue(name)) and name:lower():find("sleeping bag", 1, true) then
+        buffs.castAt = clock()
+        buffs.castIcon = (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(id)) or buffs.castIcon
+        if IsResting and IsResting() then buffs.sleepAt = clock() end
+        updateSoon(false)
+      end
+    end
   elseif event == "PLAYER_XP_UPDATE" then
     local xp, mx, lvl = UnitXP("player"), UnitXPMax("player"), UnitLevel("player")
     local gain
