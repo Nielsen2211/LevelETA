@@ -59,7 +59,7 @@ When you hit 60 there is nothing left to level, so LevelETA changes with you:
 - **Reputation bar**: the XP bar turns into a bar for the faction you watch (tick *Show as Experience Bar* in your reputation window), with rep per hour, time to the next standing and the rep you made this session. Hover it to see when you reach the next standing
 - With GoldETA installed, your epic mount goal sits right under the recap
 
-You can turn the reputation bar off in the settings.
+You can turn the recap and the reputation bar off in the settings.
 
 ## Works with GoldETA
 

@@ -63,7 +63,7 @@ local LOC = {
     repHr = "Rep/h", repSess = "Session", repHead = "Reputation", repNone = "Watch a faction to see it here",
     repHint = "Open your reputation window and tick Show as Experience Bar on a faction.",
     repLeft = "Rep to next standing", repAt = "%s", repBar = "Reputation bar at level 60",
-    recap60 = "Level 60", played60 = "Played to 60", slowest = "Slowest level", dh = "%dd %dh", reached = "Reached",
+    recap60 = "Level 60", showRecap = "Level 60 recap", maxHead = "At level 60", played60 = "Played to 60", slowest = "Slowest level", dh = "%dd %dh", reached = "Reached",
     buffWarn = "Warn when XP buffs run out", leftFmt = "%s left",
     warnSec = "Buff warnings", foodWarn = "Food buff, warn before", bagWarn = "Sleeping bag, warn before", secShort = "sec",
     foodSoon = "Food buff is running out", foodGone = "Food buff ran out", foodAgain = "Eat again to keep +5% XP from kills",
@@ -111,7 +111,7 @@ local LOC = {
     repHr = "Rep/t", repSess = "Session", repHead = "Omdømme", repNone = "Følg en faction for at se den her",
     repHint = "Åbn dit omdømme-vindue og sæt flueben i Show as Experience Bar ved en faction.",
     repLeft = "Rep til næste niveau", repAt = "%s", repBar = "Omdømme-bar på level 60",
-    recap60 = "Level 60", played60 = "Spilletid til 60", slowest = "Langsomste level", dh = "%dd %dt", reached = "Nået",
+    recap60 = "Level 60", showRecap = "Level 60 recap", maxHead = "På level 60", played60 = "Spilletid til 60", slowest = "Langsomste level", dh = "%dd %dt", reached = "Nået",
     buffWarn = "Advar når XP-buffs løber ud", leftFmt = "%s tilbage",
     warnSec = "Buff-advarsler", foodWarn = "Food buff, advar før", bagWarn = "Sovepose, advar før", secShort = "sek",
     foodSoon = "Food buff løber snart ud", foodGone = "Food buff er løbet ud", foodAgain = "Spis igen for at beholde +5% XP fra kills",
@@ -1492,7 +1492,11 @@ end
 local function mainRows(y)
   local lvl = UnitLevel("player")
   if lvl >= MAXLVL then
-    if not (DB.showToday or DB.showNext or DB.show60) then return y end
+    if DB.showRecap == false then
+      local rt, rv = INFO.race(MAXLVL, 0, 0)  -- kapløbet har sin egen knap
+      if rt then return setRow(rows[1], y, rt, rv, nil, true) end
+      return y
+    end
     -- level 60 recap: hvornaar du naaede det, spilletiden dertil og dit langsomste level
     local function long(sec)
       sec = math.floor(sec)
@@ -1833,6 +1837,8 @@ slider(-202, "size", 0.6, 2.0, 0.05, function() return DB.scale end, function(v)
 section(-236, "goldHead")
 toggle(-258, "showGold", function() return not (DB.hideSec and DB.hideSec.GoldETA) end,
   function(v) DB.hideSec = DB.hideSec or {}; DB.hideSec.GoldETA = (not v) or nil end)
+section(-292, "maxHead")
+toggle(-314, "showRecap", function() return DB.showRecap ~= false end, function(v) DB.showRecap = v end)
 colX = COL
 section(-92, "rowsSec")
 toggle(-114, "showToday", function() return DB.showToday end, function(v) DB.showToday = v end)
