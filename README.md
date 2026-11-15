@@ -66,8 +66,8 @@ The part that is exact:
 - XP buffs for the time they have left: food buffs (+5% XP from kills, lost when you die) and the Cozy Sleeping Bag (+1% XP per stack, up to 3%). Rested XP from a Camp Tent at a campfire counts like any other rested XP.
 
 The part that is an estimate: **how fast you earn XP**.
-- LevelETA looks at how long your last 12 levels took. Recent levels count the most, and odd levels (long AFK, boosts) are ignored.
-- Your pace right now is mixed in: up to 40 % for today's estimate, only 10 % for level 50 and 60, so one good or bad hour does not move a date days away.
+- LevelETA looks at how long your last 12 levels took. Recent levels count the most (half as much for every 3 levels back), and odd levels (long AFK, boosts) are ignored.
+- Your pace right now is mixed in: up to 40 % after a few hours of play, for both today's estimate and level 50 and 60. If you suddenly level faster or slower, the dates follow within the hour.
 - Higher levels need more XP but also give more XP per kill and quest. LevelETA accounts for both. This model was tested against real leveling data and was on average about 6 % off over 6 levels.
 - Your play schedule is respected: if you only play from 19:00 to 21:00, the dates reflect that.
 

@@ -385,7 +385,7 @@ local function histEfficiency(hist, lvl, s)
   local sw, se = 0, 0
   for _, x in ipairs(es) do
     if x.e > med / 2.5 and x.e < med * 2.5 then
-      local w = 0.5 ^ ((lvl - 1 - x.L) / 6)
+      local w = 0.5 ^ ((lvl - 1 - x.L) / 3)  -- nyere levels vejer mest (halvt saa meget pr. 3 levels tilbage)
       sw, se = sw + w, se + w * x.e
     end
   end
@@ -399,7 +399,7 @@ local playedLevelTime, playedAt  -- fra /played: tid paa nuvaerende level, og hv
 local function rate()  -- XP pr. sekund paa dit nuvaerende level, og om det er et skoen
   local lvl = UnitLevel("player")
   local k0, s = mobxp(lvl), scale(lvl)
-  INFO.eh, INFO.liveE = nil, nil
+  INFO.eh, INFO.liveE, INFO.liveW = nil, nil, nil
 
   -- 1) dit tempo lige nu: XP og tid fra samme vindue
   local liveR, liveSpan
@@ -430,6 +430,7 @@ local function rate()  -- XP pr. sekund paa dit nuvaerende level, og om det er e
   local e
   if eh and liveR then
     local w = math.min(0.4, liveSpan / 10800)  -- dit tempo nu vejer op til 40 % efter 3 timer
+    INFO.liveW = w
     e = w * (liveR / k0) + (1 - w) * eh
   elseif eh then e = eh
   elseif liveR then e = liveR / k0
@@ -453,16 +454,18 @@ local function shortRate()
   return DB.eS * mobxp(lvl), false
 end
 
--- lang sigt (level 50 og 60): 90 % historik, 10 % dit tempo nu, glattet over ca. 2 timer
+-- lang sigt (level 50 og 60): historik + dit tempo nu (op til 40 %, som paa kort sigt), glattet over ca. 1 time.
+-- Backtestet paa rigtige level-tider: rammer bedre, naar du pludselig levler hurtigere eller langsommere.
 local lastLong
 local function longRate(r, est)
   if r == nil then r, est = shortRate() end
   if est or not INFO.eh then return r, est end
   local lvl = UnitLevel("player")
-  local e = 0.9 * INFO.eh + 0.1 * (INFO.liveE or INFO.eh)
+  local w = INFO.liveE and math.max(0.1, INFO.liveW or 0.1) or 0
+  local e = (1 - w) * INFO.eh + w * (INFO.liveE or INFO.eh)
   local dt = math.max(0, DB.play - (lastLong or DB.play)); lastLong = DB.play
   if not DB.eL or math.abs(e - DB.eL) / e > 0.4 then DB.eL = e
-  else DB.eL = DB.eL + (e - DB.eL) * math.min(1, dt / 7200) end
+  else DB.eL = DB.eL + (e - DB.eL) * math.min(1, dt / 3600) end
   return DB.eL * mobxp(lvl), false
 end
 
