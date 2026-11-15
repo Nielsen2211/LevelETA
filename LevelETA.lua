@@ -1917,7 +1917,7 @@ doneBtn:SetScript("OnClick", function() S:Hide() end)
 
 S:SetScript("OnShow", function()
   -- kun et saet indstillinger ad gangen: GoldETA's lukkes, naar LevelETA's aabnes
-  if GoldETASettings and GoldETASettings.IsShown and GoldETASettings:IsShown() then GoldETASettings:Hide() end
+  if type(GoldETASettings) == "table" and GoldETASettings.IsShown and GoldETASettings:IsShown() then GoldETASettings:Hide() end
   updateLabels()
   if fxbRecord() then
     fxbDot:SetVertexColor(0.36, 1, 0.48); fxbText:SetText(T("fxbFound")); fxbText:SetTextColor(0.85, 0.87, 0.92)
