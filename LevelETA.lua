@@ -805,12 +805,48 @@ local function campTex() return buffs.campIcon or buffs.lastCampIcon or buffs.ca
 local function foodSoon() return DB.foodWarn or 20 end
 local function bagSoon() return (DB.bagWarn or 5) * 60 end
 -- ligger du i soveposen, og mangler der stakke: tidspunktet for naeste stak (ellers nil)
+-- er soveposen lagt ud inden for den sidste time? (din egen: den har en times cooldown)
+local COZY_ITEM = 211527  -- id fra Wowhead; findes den ikke i tasken, slaas den op paa navnet
+local cozyId
+local function findCozy()
+  if cozyId ~= nil then return cozyId end
+  cozyId = false
+  pcall(function()
+    if not (C_Container and C_Container.GetContainerNumSlots) then return end
+    for b = 0, 4 do
+      for s = 1, C_Container.GetContainerNumSlots(b) or 0 do
+        local info = C_Container.GetContainerItemInfo(b, s)
+        local id = info and info.itemID
+        if id == COZY_ITEM then cozyId = id; return end
+        local name = id and C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(id)
+        if type(name) == "string" and name:lower():find("sleeping bag", 1, true) then cozyId = id; return end
+      end
+    end
+  end)
+  return cozyId
+end
+local function bagPlaced()
+  if buffs.castAt and clock() - buffs.castAt < 3600 then return true end
+  local id = findCozy() or COZY_ITEM
+  local ok, start = pcall(function()
+    if C_Container and C_Container.GetItemCooldown then return (C_Container.GetItemCooldown(id)) end
+    if GetItemCooldown then return (GetItemCooldown(id)) end
+  end)
+  return ok and type(start) == "number" and start > 0 and clock() - start < 3600
+end
 local function nextStackAt()
-  if not buffs.sleepAt or not (IsResting and IsResting()) then return nil end
+  if not (IsResting and IsResting()) then buffs.sleepAt = nil; return nil end
   local st = bagLeft() > 0 and (buffs.bagStacks or 0) or 0
   if st >= 3 then return nil end
+  if not buffs.sleepAt then
+    if not bagPlaced() then return nil end
+    buffs.sleepAt = clock()  -- laa allerede i soveposen: naeste stak kommer senest om et minut
+  end
   local t = buffs.sleepAt + 60
-  if clock() > t + 15 then return nil end  -- ingen stak kom: du er staaet op
+  if clock() > t + 15 then
+    if not bagPlaced() then return nil end  -- ingen stak og ingen sovepose: du er staaet op
+    buffs.sleepAt = clock(); t = buffs.sleepAt + 60
+  end
   return t, st
 end
 local function activeBuffs()
@@ -1781,7 +1817,7 @@ f:SetScript("OnEvent", function(self, event, a1, a2, ...)
     updateSoon(false)  -- vis ny rested med det samme
   elseif event == "PLAYER_UPDATE_RESTING" then
     -- lagt sig i soveposen (lagt ud inden for de sidste 3 min): foerste stak kommer om et minut
-    if IsResting and IsResting() and buffs.castAt and clock() - buffs.castAt < 180 then buffs.sleepAt = clock()
+    if IsResting and IsResting() and (bagPlaced() or (buffs.castAt and clock() - buffs.castAt < 180)) then buffs.sleepAt = clock()
     elseif IsResting and not IsResting() then buffs.sleepAt = nil end
     updateSoon(false)
   elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
@@ -1853,6 +1889,14 @@ SLASH_LEVELETA2 = "/lp"
 SlashCmdList.LEVELETA = function(msg)
   msg = (msg or ""):lower()
   if msg == "vis" or msg == "show" then toggleWindow()
+  elseif msg == "auras" then  -- hjaelp til fejlsoegning: dine buffs med id og tid
+    for i = 1, 60 do
+      local a = C_UnitAuras and C_UnitAuras.GetAuraDataByIndex and C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
+      if not a then break end
+      local left = (num(a.expirationTime) or 0) > 0 and math.floor(a.expirationTime - clock()) or -1
+      print(string.format("%d. %s  id=%s  stacks=%s  dur=%s  left=%ss", i, tostring(a.name), tostring(a.spellId), tostring(a.applications), tostring(a.duration), tostring(left)))
+    end
+    print("resting:", IsResting and IsResting() and "yes" or "no", " bag placed:", bagPlaced() and "yes" or "no")
   elseif msg == "perf" then
     local P, M = C_AddOnProfiler, Enum and Enum.AddOnProfilerMetric
     local function get(fn, ...) local ok, v = pcall(fn, ...); return ok and type(v) == "number" and v or nil end
