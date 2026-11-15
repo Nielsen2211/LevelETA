@@ -152,10 +152,10 @@ local function nice(t, roundMin)
   local d = date("*t", t)
   local diff = math.floor((midnight(t) - midnight(time())) / 86400 + 0.5)
   local day
-  if diff <= 0 then day = T("todayW")
+  if diff == 0 then day = T("todayW")
   elseif diff == 1 then day = T("tomorrowW")
-  elseif diff < 7 then day = T("daysFull")[d.wday]
-  elseif DB.lang == "da" then day = string.format("%d. %s", d.day, T("months")[d.month])
+  elseif diff > 1 and diff < 7 then day = T("daysFull")[d.wday]
+  elseif DB.lang == "da" then day = string.format("%d. %s", d.day, T("months")[d.month])  -- ogsaa datoer i fortiden (fx dit level 60 ding)
   else day = string.format("%s %d", T("months")[d.month], d.day) end
   return string.format(T("at"), day, d.hour, d.min)
 end
@@ -1074,7 +1074,10 @@ end
 -- ---------- animationer paa XP-baren ----------
 -- Alt koerer kun, naar noget sker (XP, ding, baren vises): spillets egne animationer, og en kort
 -- glidning af bjaelken paa under et halvt sekund. Intet arbejde i hvert billede resten af tiden.
-do
+-- Uden animationer (eller hvis spillet mangler en animations-funktion) saettes bjaelken bare direkte.
+INFO.barSet = function(c1, c2, c3) setSeg(segCur, 0, c1); setSeg(segQuest, c1, c2); setSeg(segRest, c2, c3) end
+INFO.barDing = function() end
+pcall(function()
   local function ag(obj)
     local ok, g = pcall(obj.CreateAnimationGroup, obj)
     if ok and g then return g end
@@ -1148,7 +1151,7 @@ do
     if flashAG then flashAG:Stop(); flashAG:Play() end
     if shineAG and shineMove then shineMove:SetOffset(TRW + 90, 0); shineAG:Stop(); shineAG:Play() end
   end
-end
+end)
 
 -- tallene under bjaelken paa een linje: navn lige foran tallet, fordelt over hele bredden
 local STAT_Y = -49
