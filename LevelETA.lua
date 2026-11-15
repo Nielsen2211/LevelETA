@@ -1439,11 +1439,48 @@ local function refresh()
   end
 end
 
+-- ---------- guld: gemmes kun i baggrunden til GoldETA (vises ikke i LevelETA) ----------
+-- en raekke pr. minuts spil med guld-aendringer: {p = spilletid, i = indtaegt, o = udgift} (kobber)
+local goldTrack
+do
+  local lastMoney
+  local MAXS = 3000
+  goldTrack = function(kind, a1)
+    if not DB or not GetMoney then return end
+    DB.gold = DB.gold or {s = {}, lvl = {}}
+    local g = DB.gold
+    local m = GetMoney()
+    if kind == "world" then lastMoney = m; return end
+    if kind == "level" then
+      if type(a1) == "number" and not g.lvl[a1] then g.lvl[a1] = {p = DB.play, m = m} end
+      lastMoney = m; return
+    end
+    if not lastMoney then lastMoney = m; return end
+    local d = m - lastMoney
+    lastMoney = m
+    if d == 0 then return end
+    local s, p = g.s, math.floor(DB.play)
+    local last = s[#s]
+    if not (last and p - last.p < 60) then
+      last = {p = p, i = 0, o = 0}; s[#s + 1] = last
+      if #s > MAXS then table.remove(s, 1) end
+    end
+    if d > 0 then last.i = last.i + d else last.o = last.o - d end
+  end
+end
+
 -- ---------- API til andre addons (fx GoldETA) ----------
 do
   local pending = false
   LevelETA_API = {
-    version = 1,
+    version = 2,
+    -- guld-historik LevelETA har gemt i baggrunden (ogsaa foer GoldETA blev installeret):
+    -- samples = {{p = spilletid, i = indtaegt, o = udgift}, ...} (kobber, et pr. minut), levels = {[level] = {p, m}}
+    GetGoldHistory = function()
+      if not DB then return nil end
+      local g = DB.gold or {s = {}, lvl = {}}
+      return {samples = g.s, levels = g.lvl, play = DB.play, money = GetMoney and GetMoney() or 0}
+    end,
     -- klokkeslaet (unix-tid) hvor du naar et level, med dine spilletider. nil hvis du allerede er der
     GetLevelETA = function(level)
       if not DB or type(level) ~= "number" or UnitLevel("player") >= level then return nil end
@@ -1781,6 +1818,7 @@ f:RegisterEvent("PLAYER_LEVEL_UP")
 f:RegisterEvent("QUEST_LOG_UPDATE")
 f:RegisterEvent("UPDATE_EXHAUSTION")
 f:RegisterEvent("PLAYER_UPDATE_RESTING")
+f:RegisterEvent("PLAYER_MONEY")
 if f.RegisterUnitEvent then f:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player") else f:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED") end
 f:RegisterEvent("TIME_PLAYED_MSG")
 if f.RegisterUnitEvent then f:RegisterUnitEvent("UNIT_AURA", "player") else f:RegisterEvent("UNIT_AURA") end
@@ -1828,7 +1866,10 @@ f:SetScript("OnEvent", function(self, event, a1, a2, ...)
     if DB.barPoint then bar:SetPoint(DB.barPoint[1], UIParent, DB.barPoint[2], DB.barPoint[3], DB.barPoint[4])
     else bar:SetPoint("TOP", UIParent, "TOP", 0, -14) end  -- standard: oeverst paa skaermen, midt for (bar + aktivitets-boks)
     placeButton()
+  elseif event == "PLAYER_MONEY" then
+    goldTrack("money")
   elseif event == "PLAYER_ENTERING_WORLD" then
+    goldTrack("world")
     if a1 or not DB.sess then DB.sess = {start = time(), xp = 0, kills = 0, quests = 0, levels = 0} end  -- ny login
     applyBlizz()
     lastXP, lastMax, lastLevel, lastEx = UnitXP("player"), UnitXPMax("player"), UnitLevel("player"), restedXP()
@@ -1844,6 +1885,7 @@ f:SetScript("OnEvent", function(self, event, a1, a2, ...)
       DB.ptimes[UnitLevel("player")] = total - atLevel  -- praecis start paa dette level
     end
   elseif event == "PLAYER_LEVEL_UP" then
+    goldTrack("level", a1)
     if type(a1) == "number" and DB.times[a1] == nil then DB.times[a1] = DB.play end  -- dinget gemmes altid, ogsaa hvis XP-beskeden kommer skaevt
     questDirty = true  -- quests giver mindre XP, naar du er et level hoejere: regn dem igen
     if C_Timer and C_Timer.After then
