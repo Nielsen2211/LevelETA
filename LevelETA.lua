@@ -258,7 +258,7 @@ local function scanBuffs()
         elseif num(id) == BAG_ID or n:find("well-rested", 1, true) or n:find("well rested", 1, true) then
           bag, stacks, bagIcon = exp, num(count), icon
         elseif n:find("camp benefits", 1, true) then
-          campBen = exp
+          campBen, buffs.campBenIcon = exp, icon
         else
           if n:find("campfire", 1, true) then campNear = true end
           if dur and dur >= 50 and dur <= 70 then campEnd, campDur, campIcon = exp, dur, icon end  -- et-minuts nedtaellingen ved baalet
@@ -280,6 +280,9 @@ local function scanBuffs()
   buffs.campBen = campBen
   buffs.fedUntil, buffs.bagUntil = fed, bag
   buffs.fedIcon, buffs.bagIcon = fedIcon, bagIcon
+  if fedIcon then buffs.lastFedIcon = fedIcon end
+  if bagIcon then buffs.lastBagIcon = bagIcon end
+  if campIcon then buffs.lastCampIcon = campIcon end
   buffs.bagStacks = bag and math.max(1, math.min(3, (stacks and stacks > 0) and stacks or 1)) or nil
   buffsDirty = false
 end
@@ -781,8 +784,15 @@ end
 end
 
 -- ---------- aktive XP-buffs som smaa "chips": ikon, procent, tid tilbage ----------
-local FOOD_ICON = "Interface\\Icons\\Spell_Misc_Food"
-local BAG_ICON = "Interface\\Icons\\INV_Drink_15"
+-- ikoner tages altid fra spillet selv: buffens eget ikon, ellers det sidst sete, ellers spellens ikon
+local function spellTex(id)
+  local ok, t = pcall(function() return (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(id)) or (GetSpellTexture and GetSpellTexture(id)) end)
+  return ok and t or nil
+end
+local UNKNOWN_ICON = 134400  -- spillets eget spoergsmaalstegn, kun hvis intet andet kendes
+local function foodTex() return buffs.fedIcon or buffs.lastFedIcon or UNKNOWN_ICON end
+local function bagTex() return buffs.bagIcon or buffs.lastBagIcon or buffs.castIcon or spellTex(BAG_ID) or UNKNOWN_ICON end
+local function campTex() return buffs.campIcon or buffs.lastCampIcon or buffs.campBenIcon or UNKNOWN_ICON end
 
 -- hvor laenge foer en buff loeber ud der advares (indstillinger: sekunder for food, minutter for soveposen)
 local function foodSoon() return DB.foodWarn or 20 end
@@ -799,9 +809,9 @@ end
 local function activeBuffs()
   local list = {}
   local f, b = fedLeft(), bagLeft()
-  if f > 0 then list[#list + 1] = {icon = buffs.fedIcon or FOOD_ICON, pct = "+5%", left = f, untilT = buffs.fedUntil, warn = foodSoon} end
+  if f > 0 then list[#list + 1] = {icon = foodTex(), pct = "+5%", left = f, untilT = buffs.fedUntil, warn = foodSoon} end
   if b > 0 then
-    list[#list + 1] = {icon = buffs.bagIcon or BAG_ICON, pct = "+" .. (buffs.bagStacks or 1) .. "%", left = b, untilT = buffs.bagUntil, warn = bagSoon}
+    list[#list + 1] = {icon = bagTex(), pct = "+" .. (buffs.bagStacks or 1) .. "%", left = b, untilT = buffs.bagUntil, warn = bagSoon}
   end
   return list
 end
@@ -1137,7 +1147,6 @@ end
 -- ---------- hvile-bar: sovepose og lejrbaal, som en cast bar under XP-baren ----------
 local restUpdate
 do
-local CAMP_ICON = "Interface\\Icons\\Spell_Fire_Fire"
 local GOLD_C = {1, 0.82, 0.29}
 local restRows = {}
 local function restRow(i)
@@ -1169,17 +1178,17 @@ local function calc()
   local list = {}
   local nxt, st = nextStackAt()
   if nxt then
-    list[#list + 1] = {icon = buffs.bagIcon or buffs.castIcon or BAG_ICON, title = T("sleepBag"), pips = st, s0 = nxt - 60, s1 = nxt,
+    list[#list + 1] = {icon = bagTex(), title = T("sleepBag"), pips = st, s0 = nxt - 60, s1 = nxt,
       text = function(left) return string.format(T("nextStack"), st + 1, math.ceil(left)) end}
   elseif buffs.bagFullAt and now - buffs.bagFullAt < 4 then
-    list[#list + 1] = {icon = buffs.bagIcon or BAG_ICON, title = T("sleepBag"), pips = 3, done = T("fullRested")}
+    list[#list + 1] = {icon = bagTex(), title = T("sleepBag"), pips = 3, done = T("fullRested")}
   end
   if buffs.campEnd and buffs.campEnd > now then
     local d = buffs.campDur or 60
-    list[#list + 1] = {icon = buffs.campIcon or CAMP_ICON, title = T("campfire"), s0 = buffs.campEnd - d, s1 = buffs.campEnd,
+    list[#list + 1] = {icon = campTex(), title = T("campfire"), s0 = buffs.campEnd - d, s1 = buffs.campEnd,
       text = function(left) return string.format(T("campIn"), math.ceil(left)) end}
   elseif buffs.campDoneAt and now - buffs.campDoneAt < 4 then
-    list[#list + 1] = {icon = CAMP_ICON, title = T("campfire"), done = T("campReady")}
+    list[#list + 1] = {icon = buffs.campBenIcon or campTex(), title = T("campfire"), done = T("campReady")}
   end
   return list
 end
@@ -1272,8 +1281,8 @@ do
   end
   checkBuffWarnings = function()
     if not DB.buffWarn then return end
-    check("fed", buffs.fedUntil, foodSoon(), buffs.fedIcon or FOOD_ICON, "food")
-    check("bag", buffs.bagUntil, bagSoon(), buffs.bagIcon or BAG_ICON, "bag")
+    check("fed", buffs.fedUntil, foodSoon(), foodTex(), "food")
+    check("bag", buffs.bagUntil, bagSoon(), bagTex(), "bag")
   end
 end
 
