@@ -1000,6 +1000,7 @@ end
 local BW = 460
 local bar = CreateFrame("Frame", "LevelETABar", UIParent)
 bar:SetSize(BW, 60); bar:Hide()
+lift(bar)
 skin(bar, "Bar", 920, 1024)
 movable(bar, function() return not DB.locked end)
 bar:SetScript("OnDragStop", function(self)
