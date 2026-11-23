@@ -616,6 +616,15 @@ local function movable(frame, canMove)
   frame:SetScript("OnDragStart", function(self) if canMove() then self:StartMoving() end end)
 end
 
+-- vinduer ligger rigtigt i lag: det vindue du klikker paa eller aabner, kommer foran de andre ETA vinduer,
+-- og et hoejt grundniveau goer, at et andet addons vindue i samme strata aldrig havner midt i vores dele
+local function lift(frame)
+  if frame.SetToplevel then frame:SetToplevel(true) end
+  frame:SetFrameLevel(40)
+  frame:HookScript("OnShow", function(self) self:Raise() end)
+  frame:HookScript("OnMouseDown", function(self) self:Raise() end)
+end
+
 -- ---------- hovedvindue ----------
 local W = 260
 local f = CreateFrame("Frame", "LevelETAFrame", UIParent)
@@ -653,7 +662,7 @@ f:SetScript("OnDragStop", function(self)
   local p, _, rp, x, y = self:GetPoint()
   DB.point = {p, rp, x, y}
 end)
-if f.SetToplevel then f:SetToplevel(true) end  -- det vindue du klikker paa, ligger oeverst
+lift(f)
 header(f, "|cffffffffLevel|r|cffffd24aETA|r")
 
 -- raekke: label til venstre, vaerdi til hoejre, tynd streg eller bjaelke under
@@ -1870,7 +1879,8 @@ do
 -- ---------- indstillinger ----------
 local SW, COL = 520, 260
 S = CreateFrame("Frame", "LevelETASettings", UIParent)
-S:SetSize(SW, 498); S:SetPoint("CENTER"); S:SetFrameStrata("DIALOG"); S:Hide()
+S:SetSize(SW, 498); S:SetPoint("CENTER"); S:SetFrameStrata("HIGH"); S:Hide()
+lift(S)
 skin(S, "Wide", 1040, 2048)
 movable(S, function() return true end)
 S:SetScript("OnDragStop", S.StopMovingOrSizing)
