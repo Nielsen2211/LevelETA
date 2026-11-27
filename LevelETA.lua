@@ -2123,6 +2123,15 @@ local mmIcon = mmb:CreateTexture(nil, "ARTWORK")
 mmIcon:SetSize(21, 21); mmIcon:SetPoint("TOPLEFT", 5, -5); mmIcon:SetTexture(LOGO)
 local mmBorder = mmb:CreateTexture(nil, "OVERLAY")
 mmBorder:SetSize(53, 53); mmBorder:SetPoint("TOPLEFT"); mmBorder:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+-- look like a LibDBIcon button: centred like the others in minimap bags, and skins such as
+-- DarkMode (which dress every "LibDBIcon10_" button, ring included) dress this one too
+mmBg:ClearAllPoints(); mmIcon:ClearAllPoints(); mmBorder:ClearAllPoints(); mmBorder:SetPoint("TOPLEFT")
+if AddonCompartmentFrame then
+  mmBorder:SetSize(50, 50); mmBg:SetSize(24, 24); mmBg:SetPoint("CENTER"); mmIcon:SetSize(18, 18); mmIcon:SetPoint("CENTER")
+else
+  mmBorder:SetSize(53, 53); mmBg:SetSize(20, 20); mmBg:SetPoint("TOPLEFT", 7, -5); mmIcon:SetSize(17, 17); mmIcon:SetPoint("TOPLEFT", 7, -6)
+end
+if _G["LibDBIcon10_LevelETA"] == nil then _G["LibDBIcon10_LevelETA"] = mmb end
 
 local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 local function placeButton()
